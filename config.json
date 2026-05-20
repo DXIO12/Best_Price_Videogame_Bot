@@ -10,7 +10,7 @@
   "products": [
     {
       "name": "METAL GEAR SOLID DELTA: SNAKE EATER PS5",
-      "target_price": 60,
+      "target_price": 65,
 
       "shops": [
         {
@@ -41,6 +41,11 @@
         {
           "shop": "Fnac",
           "url": "https://www.fnac.es/Metal-Gear-Solid-Snake-Eater-Day-One-Edition-PS5-Videojuego-PS5/a11122062"
+        },
+
+        {
+          "shop": "Carrefour",
+          "url": "https://www.carrefour.es/metal-gear-solid-delta-snake-eater-day-one-edition-para-ps5/VC4A-27689318/p"
         },
 
         {

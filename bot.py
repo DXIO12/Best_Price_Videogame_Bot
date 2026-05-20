@@ -8,6 +8,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from notifier import send_telegram_message
 
 from shops.amazon import get_amazon_price
+from shops.carrefour import get_carrefour_price
 from shops.game import get_game_price
 from shops.pccomponentes import get_pccomponentes_price
 from shops.xtralife import get_xtralife_price
@@ -73,6 +74,7 @@ repeat_notification_hours = config.get(
 
 SHOP_FUNCTIONS = {
     "amazon": get_amazon_price,
+    "carrefour": get_carrefour_price,
     "game": get_game_price,
     "pccomponentes": get_pccomponentes_price,
     "xtralife": get_xtralife_price,
