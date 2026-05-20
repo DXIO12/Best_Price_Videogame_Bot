@@ -1,0 +1,53 @@
+{
+  "check_interval_minutes": 30,
+
+  "notify_only_best_price": false,
+
+  "repeat_notifications": true,
+
+  "repeat_notification_hours": 3,
+
+  "products": [
+    {
+      "name": "METAL GEAR SOLID DELTA: SNAKE EATER PS5",
+      "target_price": 60,
+
+      "shops": [
+        {
+          "shop": "Amazon",
+          "url": "https://www.amazon.es/-/en/Metal-Solid-Delta-Snake-Eater/dp/B0D6PFPTXH/ref=sr_1_1?sr=8-1"
+        },
+
+        {
+          "shop": "Game",
+          "url": "https://www.game.es/videojuegos/accion/playstation-5/metal-gear-solid-delta-snake-eater-day-one-edition/232489"
+        },
+
+        {
+          "shop": "Wakkap",
+          "url": "https://wakkap.com/item/ps5-metal-gear-solid-delta-snake-eater-day-one-edition"
+        },
+
+        {
+          "shop": "Mediamarkt",
+          "url": "https://www.mediamarkt.es/es/product/_ps-5-metal-gear-solid-d-snake-eater-deluxe-edition-1577473.html"
+        },
+
+        {
+          "shop": "PCComponentes",
+          "url": "https://www.pccomponentes.com/metal-gear-solid-delta-snake-eater-day-one-edition-ps5"
+        },
+
+        {
+          "shop": "Fnac",
+          "url": "https://www.fnac.es/Metal-Gear-Solid-Snake-Eater-Day-One-Edition-PS5-Videojuego-PS5/a11122062"
+        },
+
+        {
+          "shop": "Xtralife",
+          "url": "https://www.xtralife.com/producto/metal-gear-solid-delta-snake-eater-day-one-edition-ps5-edicion-estandar/79774"
+        }
+      ]
+    }
+  ]
+}

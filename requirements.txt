@@ -1,0 +1,6 @@
+playwright
+beautifulsoup4
+requests
+python-telegram-bot
+apscheduler
+sqlite-utils
