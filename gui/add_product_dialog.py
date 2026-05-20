@@ -1,5 +1,5 @@
 from services.product_service import create_product
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QPoint
+from PyQt6.QtCore import pyqtSignal, QTimer, QPoint
 from PyQt6.QtWidgets import (
     QDialog,
     QLabel,

@@ -2,8 +2,14 @@
 
 ---
 
-## Bot that notifies when I videogame price is below a target price that you set in a selected group of shops
+## Bot that notifies when a videogame price is below a target price that you set in a selected group of shops
 
 ---
 
-More information will be added afteer the project is finish
+### Project Structure
+
+You can check the detailed [Project Structure & Component Description](project_structure.md) to understand how the modules and scrapers are organized.
+
+---
+
+More information will be added after the project is finished.

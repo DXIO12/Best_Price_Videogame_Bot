@@ -27,6 +27,7 @@ price-bot/
 ## Component Description
 
 ### Project Root
+
 - **bot.py**: Main entry point for the price tracking bot
 - **notifier.py**: Manages notifications (likely Telegram-based)
 - **config.json**: Centralized configuration file
@@ -34,11 +35,14 @@ price-bot/
 - **requirements.txt**: Python project dependencies
 
 ### Tests
+
 - **test.py**: General project tests
 - **telegramtest.py**: Telegram integration-specific tests
 
 ### shops/ Module
+
 Contains all store-specific scrapers:
+
 - **Individual scrapers**: amazon.py, fnac.py, game.py, mediamarkt.py, pccomponentes.py, wakkap.py, xtralife.py
 - **Utility modules**: 
   - **playwright_utils.py** - Common functions for Playwright automation
