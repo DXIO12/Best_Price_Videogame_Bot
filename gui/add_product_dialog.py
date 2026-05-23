@@ -15,17 +15,18 @@ from PyQt6.QtWidgets import (
 )
 import os
 
-
 def get_available_shops():
     """Dynamically get shop names from the shops folder"""
     shops_dir = os.path.join(os.path.dirname(__file__), '..', 'shops')
     shops = []
-    
+
+    EXCLUDED_SHOPS = ['playwright_utils.py', 'price_utils.py', 'carrefour.py', 'fnac.py']
+
     for file in os.listdir(shops_dir):
-        if file.endswith('.py') and not file.startswith('__') and file not in ['playwright_utils.py', 'price_utils.py']:
+        if file.endswith('.py') and not file.startswith('__') and file not in EXCLUDED_SHOPS:
             shop_name = file.replace('.py', '').capitalize()
             shops.append(shop_name)
-    
+
     shops.sort()
     return shops
 
