@@ -46,7 +46,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             juegos_filter = page.locator('quick-filter').filter(has_text="Juegos").first
             juegos_filter.scroll_into_view_if_needed(timeout=5000)
             juegos_filter.click(timeout=5000)
-            print("Clicked Juegos filter.")
             page.wait_for_timeout(2000)
         except Exception as e:
             print(f"Juegos filter error: {e}")
@@ -56,7 +55,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             try:
                 # Click the Plataforma dropdown to open it
                 page.locator('filter-select').filter(has_text="Plataforma").first.click(timeout=5000)
-                print("Clicked Plataforma dropdown.")
                 page.wait_for_timeout(1000)
 
                 # Find and click the matching platform option
@@ -64,7 +62,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
                 print(f"Platform options found: {len(platform_options)}")
                 for option in platform_options:
                     label = option.inner_text(timeout=2000).strip()
-                    print(f"  Option: {label}")
                     if platform.lower() in label.lower():
                         option.click()
                         print(f"Selected: {label}")
@@ -73,7 +70,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
 
                 # Click "Aplicar filtros" button
                 page.locator('div.action-buttons div.tag').first.click(timeout=5000)
-                print("Applied platform filter.")
                 page.wait_for_timeout(3000)
             except Exception as e:
                 print(f"Platform filter error: {e}")
@@ -95,9 +91,7 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
                     
                     # Target price specifically inside ctaWrapper
                     price_text = card.locator('div.ctaWrapper span.fontBold').first.inner_text(timeout=3000)
-                    print(f"  Raw price text: {price_text}")
                     price = float(price_text.strip().replace(',', '.').replace('€', '').strip())
-                    print(f"  Product: {href} — Price: {price}€")
 
                     if price < best_price:
                         best_price = price
@@ -105,8 +99,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
                 except Exception as e:
                     print(f"  Error reading card: {e}")
                     continue
-
-            print(f"Cheapest product: {best_href} at {best_price}€")
 
         except PlaywrightTimeout:
             print("No products found.")

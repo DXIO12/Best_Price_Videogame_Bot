@@ -210,6 +210,7 @@ class AddProductDialog(QDialog):
             "PS5",
             "NS2",
             "NS",
+            "PS4",
             "PC",
             "Xbox Series X"
         ]

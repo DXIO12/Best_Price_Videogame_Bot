@@ -10,7 +10,7 @@ SHOP_SEARCH_PATTERNS = {
     "game": "https://www.game.es/buscar?text={query}",
     "pccomponentes": "https://www.pccomponentes.com/search/?query={query}",
     "xtralife": "https://www.xtralife.com/buscar?q={query}",
-    "wakkap": "https://www.wakkap.com/buscar?q={query}",
+    "wakkap": "https://wakkap.com/search/filter/on-sale?q={query}",
     "fnac": "https://www.fnac.es/SearchResult/Results.aspx?SCat=0%211&Search={query}",
     "mediamarkt": "https://www.mediamarkt.es/es/search.html?query={query}"
 }
