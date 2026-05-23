@@ -8,7 +8,7 @@
 
 ### Project Structure
 
-You can check the detailed [Project Structure & Component Description](project_structure.md) to understand how the modules and scrapers are organized.
+You can check the detailed [Project Structure & Component Description](docs/project_structure.md) to understand how the modules and scrapers are organized.
 
 ---
 
