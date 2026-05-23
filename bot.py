@@ -15,6 +15,7 @@ from shops.xtralife import get_xtralife_price
 from shops.wakkap import get_wakkap_price
 from shops.fnac import get_fnac_price
 from shops.mediamarkt import get_mediamarkt_price
+from shops.corteingles import get_elcorteingles_price
 from shops.playwright_utils import stop_browser
 
 
@@ -80,6 +81,7 @@ SHOP_FUNCTIONS = {
     "xtralife": get_xtralife_price,
     "wakkap": get_wakkap_price,
     "fnac": get_fnac_price,
+    "corteingles": get_elcorteingles_price,
     "mediamarkt": get_mediamarkt_price
 }
 

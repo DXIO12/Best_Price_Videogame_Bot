@@ -10,7 +10,7 @@
   "products": [
     {
       "name": "METAL GEAR SOLID DELTA: SNAKE EATER PS5",
-      "target_price": 65,
+      "target_price": 60,
 
       "shops": [
         {
@@ -49,8 +49,8 @@
         },
 
         {
-          "shop": "Xtralife",
-          "url": "https://www.xtralife.com/producto/metal-gear-solid-delta-snake-eater-day-one-edition-ps5-edicion-estandar/79774"
+          "shop": "CortesIngles",
+          "url": "https://www.elcorteingles.es/videojuegos/A52039132-metal-gear-solid-snake-eater-day-one-edition-playstation-5/?stype=text_box_multi&parentCategoryId=999.51648013&color=Sin+especificar"
         }
       ]
     }
