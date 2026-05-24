@@ -19,6 +19,13 @@ __pycache__/
 last_prices.json
 
 # =========================================
+# Services/ Url Resolvers
+# =========================================
+
+.url_resolvers/carrefour_url_resolver.py
+.url_resolvers/corteingles_url_resolver.py
+
+# =========================================
 # Enviroment Variables
 # =========================================
 
