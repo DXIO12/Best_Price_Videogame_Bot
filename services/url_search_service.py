@@ -12,6 +12,7 @@ SHOP_SEARCH_PATTERNS = {
     "xtralife": "https://www.xtralife.com/buscar?q={query}",
     "wakkap": "https://wakkap.com/search/filter/on-sale?q={query}",
     "fnac": "https://www.fnac.es/SearchResult/Results.aspx?SCat=0%211&Search={query}",
+    "corteingles": "https://www.elcorteingles.es/search/?query={query}",
     "mediamarkt": "https://www.mediamarkt.es/es/search.html?query={query}"
 }
 
