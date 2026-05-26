@@ -4,6 +4,8 @@ from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
 from services.product_service import get_products_with_shops
 from PyQt6.QtCore import QThreadPool
+from database.db import SessionLocal
+from database.models import ProductShop
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -94,19 +96,22 @@ class MainWindow(QWidget):
         self.product_table = QTableWidget()
 
         self.product_table.setWordWrap(True)
-        self.product_table.setColumnCount(4)
+        self.product_table.setColumnCount(5) 
 
         self.product_table.setHorizontalHeaderLabels([
             "Product",
             "Platform",
             "Target Price",
-            "Shops"
+            "Shops",
+            "Best Price"
         ])
 
         self.product_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.product_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # ← new
+
 
         main_layout.addWidget(self.product_table)
 
@@ -165,57 +170,69 @@ class MainWindow(QWidget):
     def load_products(self):
 
         products_with_shops = get_products_with_shops()
-
         all_shops = get_available_shops()
 
-        # Build display rows: split products by platform so each platform has its own row
-        display_rows = []  # tuples of (product, platform, shops)
-        for product, shops in products_with_shops:
-            # split relational platform list into individual platform entries
+        # Build display rows
+        display_rows = []
+        for product, shop_records in products_with_shops:
             if product.platforms:
                 plats = [platform.name for platform in product.platforms]
             else:
                 plats = ['']
-
             for plat in plats:
-                display_rows.append((product, plat, shops))
+                display_rows.append((product, plat, shop_records))
 
-        # CLEAR TABLE
         self.product_table.setRowCount(0)
         self.product_table.setRowCount(len(display_rows))
 
-        for row, (product, platform_value, shops) in enumerate(display_rows):
+        # Fetch best prices from DB
+        db = SessionLocal()
+        
+        for row, (product, platform_value, shop_records) in enumerate(display_rows):
 
             self.product_table.setItem(row, 0, QTableWidgetItem(product.name))
-
             self.product_table.setItem(row, 1, QTableWidgetItem(platform_value))
-
             self.product_table.setItem(row, 2, QTableWidgetItem(f"{product.target_price} €"))
 
-            # Normalize and deduplicate shops for comparison and display
-            if shops:
+            if shop_records:
                 norm_all = {s.strip().lower() for s in all_shops}
-                norm_shops = [s.strip() for s in shops]
-                norm_set = {s.lower() for s in norm_shops}
+                norm_records = {r.shop.strip().lower() for r in shop_records}
 
-                if norm_set == norm_all:
+                if norm_records == norm_all:
                     shops_text = "ALL"
                 else:
-                    # Preserve original order but remove duplicates (case-insensitive)
-                    seen = set()
-                    deduped = []
-                    for s in norm_shops:
-                        key = s.lower()
+                    seen: set[str] = set()
+                    parts: list[str] = []
+                    for record in shop_records:
+                        key = record.shop.strip().lower()
                         if key in seen:
                             continue
                         seen.add(key)
-                        deduped.append(s)
-                    shops_text = ", ".join(deduped) if deduped else "None"
+                        label = record.shop.strip()
+                        # if record.url:
+                        #     label += " (manual URL)"
+                        parts.append(label)
+                    shops_text = ", ".join(parts) if parts else "None"
             else:
                 shops_text = "None"
 
             self.product_table.setItem(row, 3, QTableWidgetItem(shops_text))
 
+            # Best price column — lowest last_price across all shops for this product
+            shop_db_records = db.query(ProductShop).filter(
+                ProductShop.product_id == product.id,
+                ProductShop.last_price.isnot(None)
+            ).all()
+
+            if shop_db_records:
+                best_price = min(s.last_price for s in shop_db_records)
+                best_price_text = f"{best_price:.2f} €"
+            else:
+                best_price_text = "—"
+
+            self.product_table.setItem(row, 4, QTableWidgetItem(best_price_text))
+
+        db.close()
         self.product_table.resizeRowsToContents()
 
     def start_bot_worker(self):

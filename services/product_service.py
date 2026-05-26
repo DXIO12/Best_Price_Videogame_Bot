@@ -2,7 +2,7 @@ from database.db import SessionLocal
 from sqlalchemy.orm import joinedload
 from database.models import (Product, ProductShop, Platform)
 
-def create_product(name,platforms,target_price,shops=None):
+def create_product(name, platforms, target_price, shops=None, shop_urls=None):
 
     db = SessionLocal()
 
@@ -12,30 +12,38 @@ def create_product(name,platforms,target_price,shops=None):
         Platform.name.in_(platforms)
     ).all()
 
-    product = Product(name = name, target_price = target_price)
-
+    product = Product(name=name, target_price=target_price)
     product.platforms = platform_objects
 
     db.add(product)
-    db.flush()  # Flush to get the product ID without committing
+    db.flush()
 
-    # Create ProductShop records for selected shops
-    if shops:
-        unique_shops = []
-        seen = set()
-        for shop in shops:
-            if not shop or shop in seen:
-                continue
-            seen.add(shop)
-            unique_shops.append(shop)
+    # Build the full set of shops to track:
+    # - All shops selected in the dropdown
+    # - Plus any shop the user provided a manual URL for (even if not in dropdown)
+    # Manual URL always wins over resolver for the same shop.
+    shop_urls = shop_urls or {}
 
-        for shop in unique_shops:
-            product_shop = ProductShop(
-                product_id=product.id,
-                shop=shop,
-                url=""  # URL will be filled in by the scraper
-            )
-            db.add(product_shop)
+    # Normalised map: lower-case shop name → original-case name (prefer dropdown casing)
+    merged: dict[str, str] = {}  # lower → display name
+
+    for shop in (shops or []):
+        if shop:
+            merged[shop.lower()] = shop
+
+    for shop_key in shop_urls:
+        # shop_urls keys are already lower-case (set in ManualUrlDialog)
+        if shop_key and shop_key not in merged:
+            merged[shop_key] = shop_key.capitalize()
+
+    for shop_lower, shop_display in merged.items():
+        url = shop_urls.get(shop_lower, "")
+        product_shop = ProductShop(
+            product_id=product.id,
+            shop=shop_display,
+            url=url,
+        )
+        db.add(product_shop)
 
     db.commit()
     db.close()
@@ -46,7 +54,7 @@ def get_products():
     db = SessionLocal()
 
     products = db.query(Product).options(
-    joinedload(Product.platforms)
+        joinedload(Product.platforms)
     ).all()
 
     db.close()
@@ -59,25 +67,32 @@ def get_products_with_shops():
     db = SessionLocal()
 
     products = db.query(Product).options(
-    joinedload(Product.platforms)
+        joinedload(Product.platforms)
     ).all()
 
     if not products:
         db.close()
         return []
 
-    product_ids = [product.id for product in products]
+    # Deduplicate products (joinedload can cause duplicates with many-to-many)
+    seen_ids = set()
+    unique_products = []
+    for product in products:
+        if product.id not in seen_ids:
+            seen_ids.add(product.id)
+            unique_products.append(product)
+
+    product_ids = [product.id for product in unique_products]
     product_shops = db.query(ProductShop).filter(ProductShop.product_id.in_(product_ids)).all()
 
-    shops_by_product = {}
+    shops_by_product: dict[int, list[ProductShop]] = {}
     for product_shop in product_shops:
-        shops_by_product.setdefault(product_shop.product_id, []).append(product_shop.shop)
+        shops_by_product.setdefault(product_shop.product_id, []).append(product_shop)
 
     db.close()
 
-    return [
-        (product, shops_by_product.get(product.id, []))
-        for product in products
+    return [(product, shops_by_product.get(product.id, []))
+        for product in unique_products
     ]
 
 
