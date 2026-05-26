@@ -1,5 +1,5 @@
 from services.product_service import delete_products, get_products, delete_product_platforms
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QLabel,
@@ -8,7 +8,10 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QTableWidget,
     QTableWidgetItem,
-    QMessageBox
+    QSizePolicy,
+    QMessageBox,
+    QCheckBox,
+    QWidget,
 )
 
 class DeleteProductDialog(QDialog):
@@ -86,17 +89,20 @@ class DeleteProductDialog(QDialog):
         self.product_table.setRowCount(len(display_rows))
 
         for row, (pid, name, plat, price) in enumerate(display_rows):
-            checkbox_item = QTableWidgetItem()
-            checkbox_item.setFlags(
-                Qt.ItemFlag.ItemIsUserCheckable |
-                Qt.ItemFlag.ItemIsEnabled
-            )
-            checkbox_item.setCheckState(Qt.CheckState.Unchecked)
-            # store product id and platform in item data
-            checkbox_item.setData(Qt.ItemDataRole.UserRole, pid)
-            checkbox_item.setData(Qt.ItemDataRole.UserRole + 1, plat)
+            checkbox = QCheckBox()
+            checkbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            checkbox.setStyleSheet("QCheckBox { margin: 0px; padding: 0px; }")
+            checkbox.setProperty("product_id", pid)
+            checkbox.setProperty("platform", plat)
+            checkbox_widget = QWidget()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            checkbox_layout.addStretch()
+            checkbox_layout.addWidget(checkbox)
+            checkbox_layout.addStretch()
+            checkbox_widget.setLayout(checkbox_layout)
+            self.product_table.setCellWidget(row, 0, checkbox_widget)
 
-            self.product_table.setItem(row, 0, checkbox_item)
             self.product_table.setItem(row, 1, QTableWidgetItem(name))
             self.product_table.setItem(row, 2, QTableWidgetItem(plat))
             self.product_table.setItem(row, 3, QTableWidgetItem(f"{price} €"))
@@ -105,10 +111,11 @@ class DeleteProductDialog(QDialog):
         # Collect platforms to remove per product id
         to_remove = {}
         for row in range(self.product_table.rowCount()):
-            item = self.product_table.item(row, 0)
-            if item is not None and item.checkState() == Qt.CheckState.Checked:
-                pid = item.data(Qt.ItemDataRole.UserRole)
-                plat = item.data(Qt.ItemDataRole.UserRole + 1)
+            checkbox_widget = self.product_table.cellWidget(row, 0)
+            checkbox = checkbox_widget.findChild(QCheckBox) if checkbox_widget is not None else None
+            if checkbox is not None and checkbox.isChecked():
+                pid = checkbox.property("product_id")
+                plat = checkbox.property("platform")
                 if pid is None:
                     continue
                 to_remove.setdefault(pid, []).append(plat)
