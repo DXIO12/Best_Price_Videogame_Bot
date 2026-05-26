@@ -209,8 +209,6 @@ class MainWindow(QWidget):
                             continue
                         seen.add(key)
                         label = record.shop.strip()
-                        # if record.url:
-                        #     label += " (manual URL)"
                         parts.append(label)
                     shops_text = ", ".join(parts) if parts else "None"
             else:
@@ -233,7 +231,9 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 4, QTableWidgetItem(best_price_text))
 
         db.close()
-        self.product_table.resizeRowsToContents()
+        ROW_HEIGHT = 36
+        for row in range(self.product_table.rowCount()):
+            self.product_table.setRowHeight(row, ROW_HEIGHT)
 
     def start_bot_worker(self):
         self.start_bot_button.setEnabled(False)

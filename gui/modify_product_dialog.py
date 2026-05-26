@@ -1,6 +1,6 @@
-from services.product_service import modify_product, get_products, get_products_with_shops
-from gui.add_product_dialog import MultiSelectDropdown, SingleClickDoubleSpinBox, get_available_shops
-from PyQt6.QtCore import pyqtSignal, Qt
+from services.product_service import modify_product, get_products
+from gui.add_product_dialog import MultiSelectDropdown
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QLabel,
