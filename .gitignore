@@ -22,6 +22,11 @@ last_prices.json
 # =========================================
 # Services/ Url Resolvers
 # =========================================
+shops/fnac.py
+
+# =========================================
+# Services/ Url Resolvers
+# =========================================
 
 services/url_resolvers/carrefour_url_resolver.py
 services/url_resolvers/corteingles_url_resolver.py
