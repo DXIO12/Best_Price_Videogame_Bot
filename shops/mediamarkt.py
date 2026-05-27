@@ -8,6 +8,13 @@ def get_mediamarkt_price(url):
         with chromium_page(url) as page:
             page.wait_for_timeout(5000)
 
+            # Accept cookies
+            try:
+                page.locator('button#pwa-consent-layer-accept-all-button').click(timeout=8000)
+                page.wait_for_timeout(2000)
+            except:
+                pass
+
             whole = page.locator(
                 '[data-test="branded-price-whole-value"]'
             ).first.inner_text()

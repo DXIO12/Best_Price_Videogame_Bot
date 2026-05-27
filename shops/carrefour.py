@@ -6,25 +6,37 @@ def get_carrefour_price(url):
 
     try:
         with chromium_page(url) as page:
-
-            # Esperar a que cargue la página
             page.wait_for_timeout(8000)
 
-            # Obtener todos los posibles precios
-            texts = page.locator(
-                '[class*="price"]'
-            ).all_inner_texts()
+            # Accept cookies
+            try:
+                page.locator('button#onetrust-accept-btn-handler').click(timeout=8000)
+                print("Cookies accepted.")
+                page.wait_for_timeout(2000)
+            except:
+                print("Cookie button not found or already accepted.")
+
+            # The buybox has two price spans:
+            #   .buybox__price--current    → 60,84 €   (sale price  ← we want this)
+            #   .buybox__price-strikethrough → 73,01 € (original price)
+            # Target the current price span directly.
+            SELECTORS = [
+                '.buybox__price--current',
+                '[class*="price--current"]',
+                '[class*="current-price"]',
+            ]
 
             price_text = None
 
-            for text in texts:
-
-                cleaned_text = text.strip()
-
-                # Buscar un texto que contenga €
-                if "€" in cleaned_text:
-                    price_text = cleaned_text
-                    break
+            for selector in SELECTORS:
+                try:
+                    text = page.locator(selector).first.inner_text(timeout=3000)
+                    cleaned = text.strip()
+                    if cleaned and "€" in cleaned:
+                        price_text = cleaned
+                        break
+                except Exception:
+                    continue
 
             if not price_text:
                 return None

@@ -8,6 +8,13 @@ def get_wakkap_price(url):
         with chromium_page(url) as page:
             page.wait_for_timeout(5000)
 
+            # Accept cookies
+            try:
+                page.locator('div.cmp-pop div.cmp-button-mini').click(timeout=8000)
+                page.wait_for_timeout(1500)
+            except:
+                pass
+
             price_text = page.locator(
                 ".price-value.offer"
             ).evaluate("(el) => el.childNodes[1].textContent")

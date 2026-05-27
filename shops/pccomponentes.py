@@ -8,6 +8,13 @@ def get_pccomponentes_price(url):
         with chromium_page(url) as page:
             page.wait_for_timeout(5000)
 
+            # Accept cookies
+            try:
+                page.locator('button#cookiesAcceptAll').click(timeout=5000)
+                page.wait_for_timeout(1500)
+            except:
+                pass
+
             full_price = page.locator(
                 "#pdp-price-current-integer"
             ).first.inner_text()
