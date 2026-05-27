@@ -1,6 +1,5 @@
-import json
 import os
-import time
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -8,15 +7,17 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from notifier import send_telegram_message
 
 from shops.amazon import get_amazon_price
-from shops.carrefour import get_carrefour_price
 from shops.game import get_game_price
 from shops.pccomponentes import get_pccomponentes_price
 from shops.xtralife import get_xtralife_price
 from shops.wakkap import get_wakkap_price
-from shops.fnac import get_fnac_price
 from shops.mediamarkt import get_mediamarkt_price
 from shops.corteingles import get_elcorteingles_price
+from shops.carrefour import get_carrefour_price
 from shops.playwright_utils import stop_browser
+
+from database.db import SessionLocal
+from database.models import Product, ProductShop, Setting
 
 
 # =========================================================
@@ -25,49 +26,6 @@ from shops.playwright_utils import stop_browser
 
 load_dotenv()
 
-CONFIG_JSON = "config.json"
-LAST_PRICES_FILE = "last_prices.json"
-
-
-# =========================================================
-# LOAD CONFIG
-# =========================================================
-
-try:
-
-    with open(CONFIG_JSON, "r", encoding="utf-8") as file:
-        config = json.load(file)
-
-except FileNotFoundError:
-
-    print(f"Config file not found: {CONFIG_JSON}")
-    exit(1)
-
-except json.JSONDecodeError:
-
-    print(f"Invalid JSON in config file: {CONFIG_JSON}")
-    exit(1)
-
-
-# =========================================================
-# CONFIG OPTIONS
-# =========================================================
-
-notify_only_best_price = config.get(
-    "notify_only_best_price",
-    True
-)
-
-repeat_notifications = config.get(
-    "repeat_notifications",
-    True
-)
-
-repeat_notification_hours = config.get(
-    "repeat_notification_hours",
-    24
-)
-
 
 # =========================================================
 # SHOP SCRAPER FUNCTIONS
@@ -75,265 +33,106 @@ repeat_notification_hours = config.get(
 
 SHOP_FUNCTIONS = {
     "amazon": get_amazon_price,
-    "carrefour": get_carrefour_price,
     "game": get_game_price,
     "pccomponentes": get_pccomponentes_price,
     "xtralife": get_xtralife_price,
     "wakkap": get_wakkap_price,
-    "fnac": get_fnac_price,
+    "mediamarkt": get_mediamarkt_price,
     "corteingles": get_elcorteingles_price,
-    "mediamarkt": get_mediamarkt_price
+    "carrefour": get_carrefour_price
 }
 
 
 # =========================================================
-# LOAD LAST PRICES
+# LOAD SETTINGS FROM DB
 # =========================================================
 
-def load_last_prices():
+def load_settings() -> dict:
+    """Read bot settings from the DB Settings table.
+    Falls back to safe defaults if no row exists yet."""
+    db = SessionLocal()
+    setting = db.query(Setting).first()
+    db.close()
 
-    try:
+    if setting:
+        return {
+            "check_interval_minutes": setting.check_interval_minutes or 30,
+            "notify_only_best_price": setting.notify_only_best_price if setting.notify_only_best_price is not None else False,
+            "repeat_notifications": setting.repeat_notifications if setting.repeat_notifications is not None else True,
+            "repeat_notification_hours": setting.repeat_notification_hours or 3,
+        }
 
-        with open(LAST_PRICES_FILE, "r") as file:
-            return json.load(file)
-
-    except:
-        return {}
+    # Defaults when no settings row exists
+    return {
+        "check_interval_minutes": 30,
+        "notify_only_best_price": False,
+        "repeat_notifications": True,
+        "repeat_notification_hours": 3,
+    }
 
 
 # =========================================================
-# SAVE LAST PRICES
+# NOTIFICATION COOLDOWN CHECK
 # =========================================================
 
-def save_last_prices(data):
+def should_notify(shop_record: ProductShop, current_price: float, settings: dict) -> bool:
+    """Return True if a Telegram notification should be sent for this shop record."""
 
-    with open(LAST_PRICES_FILE, "w") as file:
-        json.dump(data, file, indent=4)
+    last_price = shop_record.last_price
+    last_notified = shop_record.last_notified  # datetime or None
 
-
-# =========================================================
-# CHECK IF NOTIFICATION SHOULD BE SENT
-# =========================================================
-
-def should_notify(last_entry, current_price):
-
-    if not last_entry:
+    # Always notify if we have never notified before
+    if last_notified is None:
         return True
 
-    last_price = last_entry.get("price")
-    last_notification = last_entry.get(
-        "last_notification",
-        0
-    )
-
-    current_time = time.time()
-
-    # Notify if price changed
-    if last_price != current_price:
+    # Notify if the price has dropped since last notification
+    if last_price is None or current_price < last_price:
         return True
 
-    # Notify again after cooldown
-    if repeat_notifications:
-
-        hours_passed = (
-            current_time - last_notification
-        ) / 3600
-
-        if hours_passed >= repeat_notification_hours:
+    # Notify again after cooldown if repeat_notifications is enabled
+    if settings["repeat_notifications"]:
+        now = datetime.now(timezone.utc)
+        # last_notified may be naive (SQLite stores without tz); normalise it
+        if last_notified.tzinfo is None:
+            last_notified = last_notified.replace(tzinfo=timezone.utc)
+        hours_passed = (now - last_notified).total_seconds() / 3600
+        if hours_passed >= settings["repeat_notification_hours"]:
             return True
 
     return False
 
 
 # =========================================================
-# SAVE NOTIFICATION
+# PERSIST PRICE + NOTIFICATION TIMESTAMP TO DB
 # =========================================================
 
-def save_notification(last_prices, key, price):
-
-    last_prices[key] = {
-        "price": price,
-        "last_notification": time.time()
-    }
-
-
-# =========================================================
-# FETCH ALL SHOP PRICES
-# =========================================================
-
-def fetch_shop_prices(product, target_price):
-    """
-    Scrapes all shops for a product and returns list of prices.
-    Only includes prices at or below target price.
-    """
-    prices_list = []
-    name = product["name"]
-
-    for shop_data in product["shops"]:
-
-        try:
-
-            shop = shop_data["shop"].lower()
-            url = shop_data["url"]
-
-            print("===================================")
-            print(f"Checking {name} on {shop}")
-
-            scraper_function = SHOP_FUNCTIONS.get(shop)
-
-            if scraper_function is None:
-                print(f"No scraper found for {shop}")
-                continue
-
-            current_price = scraper_function(url)
-
-            if current_price is None:
-                print(
-                    f"Could not retrieve price "
-                    f"for {name} from {shop}"
-                )
-                continue
-
-            print(f"{shop}: {current_price}€")
-
-            # Only collect prices below or at target
-            if current_price <= target_price:
-                prices_list.append({
-                    "shop": shop,
-                    "price": current_price,
-                    "url": url,
-                    "product_key": f"{name}_{shop}"
-                })
-
-        except Exception as e:
-            print(f"Error checking {name} on {shop}: {e}")
-
-    return prices_list
+def save_shop_record(db, shop_record: ProductShop, price: float, notified: bool):
+    """Update last_price and optionally last_notified on the ProductShop row."""
+    shop_record.last_price = price
+    if notified:
+        shop_record.last_notified = datetime.now(timezone.utc)
+    db.commit()
 
 
 # =========================================================
-# NOTIFY BEST PRICE IMMEDIATELY
+# SEND TELEGRAM NOTIFICATION
 # =========================================================
 
-def send_best_price_notification(prices_list, last_prices, product_name, target_price):
-
-    if prices_list:
-        best_price_info = min(prices_list, key=lambda x: x["price"])
-        lowest_price_key = f"{product_name}_lowest"
-        last_entry = last_prices.get(lowest_price_key)
-
-        if should_notify(last_entry, best_price_info["price"]):
-
-            print("===================================")
-            print("BEST PRICE FOUND!")
-            print(f"PRODUCT: {product_name}")
-            print(f"SHOP: {best_price_info['shop']}")
-            print(f"CURRENT PRICE: {best_price_info['price']}€")
-            print(f"TARGET PRICE: {target_price}€")
-            print("===================================")
-
-            message = (
-                f"PRICE ALERT!\n\n"
-                f"Product: {product_name}\n"
-                f"Shop: {best_price_info['shop']}\n"
-                f"Current price: {best_price_info['price']}€\n"
-                f"Target price: {target_price}€\n\n"
-                f"URL:\n{best_price_info['url']}"
-            )
-
-            send_telegram_message(
-                os.getenv("TELEGRAM_BOT_TOKEN"),
-                os.getenv("TELEGRAM_CHAT_ID"),
-                message
-            )
-
-            save_notification(
-                last_prices,
-                lowest_price_key,
-                best_price_info["price"]
-            )
-
-            save_last_prices(last_entry)
-
-        else:
-            print("Best price already notified recently.")
-
-    return last_prices
-
-
-# =========================================================
-# NOTIFY ALL SHOPS IMMEDIATELY
-# =========================================================
-
-def notify_all_shops(product, target_price, last_prices):
-    name = product["name"]
-
-    for shop_data in product["shops"]:
-
-        try:
-            shop = shop_data["shop"].lower()
-            url = shop_data["url"]
-
-            print("===================================")
-            print(f"Checking {name} on {shop}")
-
-            scraper_function = SHOP_FUNCTIONS.get(shop)
-
-            if scraper_function is None:
-                print(f"No scraper found for {shop}")
-                continue
-
-            current_price = scraper_function(url)
-
-            if current_price is None:
-                print(
-                    f"Could not retrieve price "
-                    f"for {name} from {shop}"
-                )
-                continue
-
-            print(f"{shop}: {current_price}€")
-
-            if current_price <= target_price:
-                product_key = f"{name}_{shop}"
-                last_entry = last_prices.get(product_key)
-
-                if should_notify(last_entry, current_price):
-                    print("===================================")
-                    print(f"PRODUCT: {name}")
-                    print(f"SHOP: {shop}")
-                    print(f"CURRENT PRICE: {current_price}€")
-                    print(f"TARGET PRICE: {target_price}€")
-                    print("===================================")
-
-                    message = (
-                        f"PRICE ALERT!\n\n"
-                        f"Product: {name}\n"
-                        f"Shop: {shop}\n"
-                        f"Current price: {current_price}€\n"
-                        f"Target price: {target_price}€\n\n"
-                        f"URL:\n{url}"
-                    )
-
-                    send_telegram_message(
-                        os.getenv("TELEGRAM_BOT_TOKEN"),
-                        os.getenv("TELEGRAM_CHAT_ID"),
-                        message
-                    )
-
-                    save_notification(
-                        last_prices,
-                        product_key,
-                        current_price
-                    )
-                    save_last_prices(last_prices)
-                else:
-                    print(f"{shop} already notified recently.")
-
-        except Exception as e:
-            print(f"Error checking {name} on {shop}: {e}")
-
-    return last_prices
+def send_notification(product_name: str, shop: str, current_price: float,
+                      target_price: float, url: str):
+    message = (
+        f"PRICE ALERT!\n\n"
+        f"Product: {product_name}\n"
+        f"Shop: {shop}\n"
+        f"Current price: {current_price}€\n"
+        f"Target price: {target_price}€\n\n"
+        f"URL:\n{url}"
+    )
+    send_telegram_message(
+        os.getenv("TELEGRAM_BOT_TOKEN"),
+        os.getenv("TELEGRAM_CHAT_ID"),
+        message
+    )
 
 
 # =========================================================
@@ -341,67 +140,151 @@ def notify_all_shops(product, target_price, last_prices):
 # =========================================================
 
 def check_prices():
-
+    print("===================================")
     print("Checking product prices...")
 
-    last_prices = load_last_prices()
+    settings = load_settings()
+    db = SessionLocal()
 
-    for product in config["products"]:
+    try:
+        products = db.query(Product).all()
 
-        name = product["name"]
-        target_price = product["target_price"]
+        if not products:
+            print("No products in database.")
+            return
 
-        if notify_only_best_price:
-            # Scrape all shops once and send one best-price notification
-            prices_list = fetch_shop_prices(product, target_price)
+        for product in products:
+            name = product.name
+            target_price = product.target_price
+            shop_records = db.query(ProductShop).filter(
+                ProductShop.product_id == product.id
+            ).all()
 
-            last_prices = send_best_price_notification(
-                prices_list,
-                last_prices,
-                name,
-                target_price
-            )
+            if not shop_records:
+                print(f"No shops configured for {name}, skipping.")
+                continue
 
-            save_last_prices(last_prices)
-        else:
-            # Scrape and notify each shop immediately
-            last_prices = notify_all_shops(
-                product,
-                target_price,
-                last_prices
-            )
+            print(f"\nProduct: {name} | Target: {target_price}€")
 
-    # Clean up browser instances after each check cycle
-    stop_browser()
+            if settings["notify_only_best_price"]:
+                _check_best_price(db, name, target_price, shop_records, settings)
+            else:
+                _check_all_shops(db, name, target_price, shop_records, settings)
+
+    finally:
+        db.close()
+        stop_browser()
+
+    print("===================================")
+    print("Price check complete.")
 
 
 # =========================================================
-# MAIN
+# STRATEGY A — notify only the single best price
+# =========================================================
+
+def _check_best_price(db, product_name: str, target_price: float,
+                      shop_records: list, settings: dict):
+    """Scrape all shops, then send one notification for the cheapest hit."""
+    hits = []
+
+    for record in shop_records:
+        price = _scrape(record)
+        if price is not None:
+            save_shop_record(db, record, price, notified=False)
+            if price <= target_price:
+                hits.append((price, record))
+
+    if not hits:
+        print(f"  No prices at or below target for {product_name}.")
+        return
+
+    best_price, best_record = min(hits, key=lambda x: x[0])
+
+    if should_notify(best_record, best_price, settings):
+        print(f"  BEST PRICE: {best_price}€ at {best_record.shop}")
+        send_notification(product_name, best_record.shop,
+                          best_price, target_price, best_record.url)
+        save_shop_record(db, best_record, best_price, notified=True)
+    else:
+        print(f"  Best price {best_price}€ already notified recently.")
+
+
+# =========================================================
+# STRATEGY B — notify every shop that beats the target
+# =========================================================
+
+def _check_all_shops(db, product_name: str, target_price: float,
+                     shop_records: list, settings: dict):
+    """Scrape each shop and notify individually for every hit."""
+    for record in shop_records:
+        price = _scrape(record)
+
+        if price is None:
+            continue
+
+        # Always persist the latest price
+        notified = False
+
+        if price <= target_price:
+            if should_notify(record, price, settings):
+                print(f"  ALERT: {record.shop} → {price}€")
+                send_notification(product_name, record.shop,
+                                  price, target_price, record.url)
+                notified = True
+            else:
+                print(f"  {record.shop}: {price}€ — already notified recently.")
+        else:
+            print(f"  {record.shop}: {price}€ — above target.")
+
+        save_shop_record(db, record, price, notified=notified)
+
+
+# =========================================================
+# SCRAPE HELPER
+# =========================================================
+
+def _scrape(record: ProductShop) -> float | None:
+    """Call the right scraper for a ProductShop record. Returns price or None."""
+    shop_key = record.shop.strip().lower()
+    scraper = SHOP_FUNCTIONS.get(shop_key)
+
+    if scraper is None:
+        print(f"  No scraper for shop '{record.shop}' — skipping.")
+        return None
+
+    if not record.url or not record.url.strip():
+        print(f"  No URL set for {record.shop} — skipping.")
+        return None
+
+    try:
+        print(f"  Scraping {record.shop}...")
+        price = scraper(record.url)
+        print(f"  {record.shop}: {price}€" if price is not None
+              else f"  {record.shop}: could not retrieve price.")
+        return price
+    except Exception as e:
+        print(f"  Error scraping {record.shop}: {e}")
+        return None
+
+
+# =========================================================
+# STANDALONE ENTRY POINT (runs scheduler)
 # =========================================================
 
 if __name__ == "__main__":
+    settings = load_settings()
+    interval = settings["check_interval_minutes"]
 
     scheduler = BlockingScheduler()
-
-    scheduler.add_job(
-        check_prices,
-        'interval',
-        minutes=config["check_interval_minutes"]
-    )
+    scheduler.add_job(check_prices, "interval", minutes=interval)
 
     print("===================================")
     print("Price tracker bot started.")
-
-    print(
-        f"Checking every "
-        f"{config['check_interval_minutes']} minutes."
-    )
-
-    print("Press CTRL+C to stop the bot.")
+    print(f"Checking every {interval} minutes.")
+    print("Press CTRL+C to stop.")
     print("===================================")
 
-    # First execution
+    # Run once immediately, then let the scheduler take over
     check_prices()
-
-    # Scheduler loop
     scheduler.start()
