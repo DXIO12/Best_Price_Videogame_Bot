@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 class ModifyProductDialog(QDialog):
 
     product_modified = pyqtSignal()
+    resolve_urls_requested = pyqtSignal(list)  # emits list of product_ids
 
     def __init__(self):
         super().__init__()
@@ -62,14 +63,17 @@ class ModifyProductDialog(QDialog):
         button_layout = QHBoxLayout()
 
         self.modify_button = QPushButton("Apply Changes")
+        self.resolve_button = QPushButton("Resolve URLs")
         self.cancel_button = QPushButton("Cancel")
 
         button_layout.addWidget(self.modify_button)
+        button_layout.addWidget(self.resolve_button)
         button_layout.addWidget(self.cancel_button)
 
         layout.addLayout(button_layout)
 
         self.modify_button.clicked.connect(self.on_apply_changes)
+        self.resolve_button.clicked.connect(self.on_resolve_urls)
         self.cancel_button.clicked.connect(self.close)
 
         self.setLayout(layout)
@@ -144,6 +148,38 @@ class ModifyProductDialog(QDialog):
             # Target Price (editable, with € symbol)
             price_item = QTableWidgetItem(f"{price} €")
             self.product_table.setItem(row, 3, price_item)
+
+    def on_resolve_urls(self):
+        """Collect checked product IDs and request URL resolution for them."""
+        product_ids = set()
+
+        for row in range(self.product_table.rowCount()):
+            checkbox_widget = self.product_table.cellWidget(row, 0)
+            checkbox = checkbox_widget.findChild(QCheckBox) if checkbox_widget else None
+            if checkbox and checkbox.isChecked():
+                pid = checkbox.property("product_id")
+                if pid is not None:
+                    product_ids.add(pid)
+
+        if not product_ids:
+            QMessageBox.warning(
+                self,
+                "No products selected",
+                "Please select at least one product to resolve URLs for."
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Resolve URLs",
+            f"Resolve missing URLs for {len(product_ids)} product(s)?\n"
+            "Only shops without a URL will be updated.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.resolve_urls_requested.emit(list(product_ids))
+            self.close()
 
     def on_apply_changes(self):
         """Collect selected products with edited values and apply changes."""

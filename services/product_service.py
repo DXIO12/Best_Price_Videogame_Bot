@@ -46,7 +46,9 @@ def create_product(name, platforms, target_price, shops=None, shop_urls=None):
         db.add(product_shop)
 
     db.commit()
+    product_id = product.id
     db.close()
+    return product_id
 
 
 def get_products():

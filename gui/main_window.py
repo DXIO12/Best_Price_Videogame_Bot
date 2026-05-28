@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui.bot_worker import BotWorker
+from services.resolver_worker import ResolverWorker
 
 
 class MainWindow(QWidget):
@@ -136,7 +137,7 @@ class MainWindow(QWidget):
         dialog = AddProductDialog()
         
         # Refresh table when product is added
-        dialog.product_added.connect(self.load_products)
+        dialog.product_added.connect(self.on_product_added)
         dialog.exec()
 
     # =========================================
@@ -161,6 +162,8 @@ class MainWindow(QWidget):
         
         # Refresh table when product is modified
         dialog.product_modified.connect(self.load_products)
+        # Trigger resolver when user clicks "Resolve URLs" in the dialog
+        dialog.resolve_urls_requested.connect(self.start_resolver_worker)
         dialog.exec()
 
     # =========================================
@@ -194,6 +197,7 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 1, QTableWidgetItem(platform_value))
             self.product_table.setItem(row, 2, QTableWidgetItem(f"{product.target_price} €"))
 
+            # Shops column — annotate manual-URL shops with a 📌 marker
             if shop_records:
                 norm_all = {s.strip().lower() for s in all_shops}
                 norm_records = {r.shop.strip().lower() for r in shop_records}
@@ -209,6 +213,8 @@ class MainWindow(QWidget):
                             continue
                         seen.add(key)
                         label = record.shop.strip()
+                        if record.url:          # manual URL was provided
+                            label += " 📌"
                         parts.append(label)
                     shops_text = ", ".join(parts) if parts else "None"
             else:
@@ -234,6 +240,37 @@ class MainWindow(QWidget):
         ROW_HEIGHT = 36
         for row in range(self.product_table.rowCount()):
             self.product_table.setRowHeight(row, ROW_HEIGHT)
+
+    # =========================================
+    # PRODUCT ADDED → AUTO RESOLVE URLS
+    # =========================================
+
+    def on_product_added(self, product_id: int):
+        """Called after a product is saved. Refreshes table then resolves missing URLs."""
+        self.load_products()
+        self.start_resolver_worker([product_id])
+
+    def start_resolver_worker(self, product_ids: list):
+        self.status_label.setText(f"Resolving URLs for {len(product_ids)} product(s)...")
+
+        worker = ResolverWorker(product_ids)
+        worker.signals.started.connect(
+            lambda: self.status_label.setText("URL resolver running...")
+        )
+        worker.signals.finished.connect(self.on_resolver_finished)
+        worker.signals.error.connect(self.on_resolver_error)
+        self.thread_pool.start(worker)
+
+    def on_resolver_finished(self, results: dict):
+        resolved = sum(
+            1 for shops in results.values()
+            for url in shops.values() if url
+        )
+        self.status_label.setText(f"URL resolver done — {resolved} URL(s) resolved.")
+        self.load_products()
+
+    def on_resolver_error(self, message: str):
+        self.status_label.setText(f"Resolver error: {message}")
 
     def start_bot_worker(self):
         self.start_bot_button.setEnabled(False)

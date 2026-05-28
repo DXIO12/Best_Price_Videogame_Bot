@@ -220,7 +220,7 @@ class ManualUrlDialog(QDialog):
             label = QLabel(f"{shop}:")
             label.setFixedWidth(130)
             url_input = QLineEdit()
-            url_input.setPlaceholderText("URL: https://... (optional)")
+            url_input.setPlaceholderText("https://... (optional)")
             self.url_inputs[shop.lower()] = url_input
             row.addWidget(label)
             row.addWidget(url_input)
@@ -289,7 +289,7 @@ class ManualUrlDialog(QDialog):
 
 class AddProductDialog(QDialog):
 
-    product_added = pyqtSignal()
+    product_added = pyqtSignal(int)  # emits product_id
 
     def __init__(self):
         super().__init__()
@@ -393,15 +393,11 @@ class AddProductDialog(QDialog):
             print("Please select at least one platform.")
             return
 
-        if not selected_shops and not self.manual_shop_urls:
-            QMessageBox.warning(
-                self,
-                "No Shops Selected",
-                "Please select at least one shop or enter a manual URL."
-            )
+        if not selected_shops:
+            print("Please select at least one shop.")
             return
 
-        create_product(
+        product_id = create_product(
             name=name,
             platforms=selected_platforms,
             target_price=target_price,
@@ -410,5 +406,5 @@ class AddProductDialog(QDialog):
         )
 
         print("Product saved successfully.")
-        self.product_added.emit()
+        self.product_added.emit(product_id)
         self.close()
