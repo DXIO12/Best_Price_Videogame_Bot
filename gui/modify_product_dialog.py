@@ -257,7 +257,6 @@ class ModifyProductDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
-            # Apply changes to database
             for product_id, changes in selected_changes.items():
                 modify_product(
                     product_id,
@@ -265,6 +264,26 @@ class ModifyProductDialog(QDialog):
                     new_name=changes['name'],
                     new_target_price=changes['price']
                 )
+
+                original = next(
+                    (r for r in self.product_rows if r['product_id'] == product_id), None
+                )
+                if original:
+                    diffs = []
+                    if changes['name'] != original['original_name']:
+                        diffs.append(f"name: '{original['original_name']}' → '{changes['name']}'")
+                    if set(changes['platforms']) != set(original['original_platforms']):
+                        diffs.append(
+                            f"platforms: {original['original_platforms']} → {changes['platforms']}"
+                        )
+                    if changes['price'] != original['original_price']:
+                        diffs.append(
+                            f"price: {original['original_price']}€ → {changes['price']}€"
+                        )
+                    if diffs:
+                        print(f"[Modify] '{changes['name']}' — {', '.join(diffs)}")
+                    else:
+                        print(f"[Modify] '{changes['name']}' — no changes detected")
 
             self.load_products()
             QMessageBox.information(self, "Success", "Products updated successfully.")

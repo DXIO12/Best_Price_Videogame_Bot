@@ -110,6 +110,7 @@ class DeleteProductDialog(QDialog):
     def confirm_delete(self):
         # Collect platforms to remove per product id
         to_remove = {}
+        product_names = {}  # pid → name
         for row in range(self.product_table.rowCount()):
             checkbox_widget = self.product_table.cellWidget(row, 0)
             checkbox = checkbox_widget.findChild(QCheckBox) if checkbox_widget is not None else None
@@ -119,6 +120,9 @@ class DeleteProductDialog(QDialog):
                 if pid is None:
                     continue
                 to_remove.setdefault(pid, []).append(plat)
+                if pid not in product_names:
+                    name_item = self.product_table.item(row, 1)
+                    product_names[pid] = name_item.text() if name_item else str(pid)
 
         if not to_remove:
             QMessageBox.warning(
@@ -137,8 +141,11 @@ class DeleteProductDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
-            # Call service to remove platforms or delete product if no platforms remain
             for pid, plats in to_remove.items():
                 delete_product_platforms(pid, plats)
+                name = product_names.get(pid, str(pid))
+                plats_str = ", ".join(plats) if plats else "all platforms"
+                print(f"===================================")
+                print(f"[Delete] '{name}' — platforms removed: {plats_str}")
             self.product_deleted.emit()
             self.close()

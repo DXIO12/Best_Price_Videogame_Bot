@@ -15,9 +15,12 @@ def get_wakkap_price(url):
             except:
                 pass
 
-            price_text = page.locator(
-                ".price-value.offer"
-            ).evaluate("(el) => el.childNodes[1].textContent")
+            # Try offer price first, fall back to regular price
+            offer = page.locator(".price-value.offer")
+            if offer.count() > 0:
+                price_text = offer.evaluate("(el) => el.childNodes[1].textContent")
+            else:
+                price_text = page.locator(".price-value").first.inner_text(timeout=5000)
 
             return extract_price(price_text)
 

@@ -369,6 +369,18 @@ class AddProductDialog(QDialog):
             shop_urls=self.manual_shop_urls
         )
 
-        print("Product saved successfully.")
+        manual_shops = set(self.manual_shop_urls.keys())
+        shops_info = []
+        for shop in selected_shops:
+            if shop.lower() in manual_shops:
+                shops_info.append(f"{shop} (manual URL)")
+            else:
+                shops_info.append(f"{shop} (resolver)")
+        print(f"===================================")
+        print(f"[Add] Product saved: '{name}'")
+        print(f"[Add] Platforms   : {', '.join(selected_platforms)}")
+        print(f"[Add] Target price: {target_price} €")
+        print(f"[Add] Shops       : {', '.join(shops_info)}")
+        print(f"===================================")
         self.product_added.emit(product_id)
         self.close()
