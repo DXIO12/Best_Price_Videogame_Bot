@@ -3,7 +3,7 @@ from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
 from services.product_service import get_products_with_shops
-from PyQt6.QtCore import QThreadPool, Qt
+from PyQt6.QtCore import QThreadPool, Qt, QTimer
 from database.db import SessionLocal
 from database.models import ProductShop
 from PyQt6.QtWidgets import (
@@ -19,7 +19,8 @@ from PyQt6.QtWidgets import (
 )
 
 from gui.bot_worker import BotWorker
-from services.resolver_worker import ResolverWorker
+from services.resolver_worker import ResolverWorker, RetryWorker
+from services.resolve_urls_service import MAX_RETRIES
 
 
 class MainWindow(QWidget):
@@ -36,6 +37,11 @@ class MainWindow(QWidget):
         self.setup_ui()
 
         self.load_products()
+
+        # Check for pending URL retries every 5 minutes
+        self.retry_timer = QTimer()
+        self.retry_timer.timeout.connect(self.check_retry_queue)
+        self.retry_timer.start(5 * 60 * 1000)
 
     def setup_ui(self):
 
@@ -170,6 +176,34 @@ class MainWindow(QWidget):
     # LOAD PRODUCTS IN THE TABLE
     # =========================================
 
+    @staticmethod
+    def _build_shops_text(shop_records, all_shops) -> str:
+        """Build the Shops column text for one product row."""
+        norm_all = {s.strip().lower() for s in all_shops}
+        norm_records = {r.shop.strip().lower() for r in shop_records}
+
+        if norm_records == norm_all and all(r.url for r in shop_records):
+            return "ALL"
+
+        seen: set[str] = set()
+        parts: list[str] = []
+        for record in shop_records:
+            key = record.shop.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            label = record.shop.strip()
+            if not record.url:
+                retry = record.retry_count or 0
+                if retry > MAX_RETRIES:
+                    label += " ⚠"       # all retries exhausted
+                elif retry > 0:
+                    label += " ⏳"      # failed but retry scheduled
+                else:
+                    label += " ✖"       # first attempt not yet done
+            parts.append(label)
+        return ", ".join(parts) if parts else "None"
+
     def load_products(self):
 
         products_with_shops = get_products_with_shops()
@@ -199,28 +233,10 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 1, QTableWidgetItem(platform_value))
             self.product_table.setItem(row, 2, QTableWidgetItem(f"{product.target_price} €"))
 
-            # Shops column — annotate manual-URL shops with a 📌 marker
-            if shop_records:
-                norm_all = {s.strip().lower() for s in all_shops}
-                norm_records = {r.shop.strip().lower() for r in shop_records}
-
-                if norm_records == norm_all:
-                    shops_text = "ALL"
-                else:
-                    seen: set[str] = set()
-                    parts: list[str] = []
-                    for record in shop_records:
-                        key = record.shop.strip().lower()
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        label = record.shop.strip()
-                        if not record.url:          # manual URL was provided
-                            label += " ✖"
-                        parts.append(label)
-                    shops_text = ", ".join(parts) if parts else "None"
-            else:
-                shops_text = "None"
+            shops_text = (
+                self._build_shops_text(shop_records, all_shops)
+                if shop_records else "None"
+            )
 
             self.product_table.setItem(row, 3, QTableWidgetItem(shops_text))
 
@@ -273,24 +289,7 @@ class MainWindow(QWidget):
         db.close()
 
         all_shops = get_available_shops()
-        norm_all = {s.strip().lower() for s in all_shops}
-        norm_records = {r.shop.strip().lower() for r in shop_records}
-
-        if norm_records == norm_all:
-            shops_text = "ALL"
-        else:
-            seen: set[str] = set()
-            parts: list[str] = []
-            for record in shop_records:
-                key = record.shop.strip().lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                label = record.shop.strip()
-                if not record.url:
-                    label += " ✖"
-                parts.append(label)
-            shops_text = ", ".join(parts) if parts else "None"
+        shops_text = self._build_shops_text(shop_records, all_shops)
 
         for row in range(self.product_table.rowCount()):
             item = self.product_table.item(row, 0)
@@ -307,6 +306,22 @@ class MainWindow(QWidget):
 
     def on_resolver_error(self, message: str):
         self.status_label.setText(f"Resolver error: {message}")
+
+    # =========================================
+    # RETRY QUEUE (background timer)
+    # =========================================
+
+    def check_retry_queue(self):
+        worker = RetryWorker()
+        worker.signals.progress.connect(self.on_resolver_progress)
+        worker.signals.finished.connect(self.on_retry_finished)
+        worker.signals.error.connect(self.on_resolver_error)
+        self.thread_pool.start(worker)
+
+    def on_retry_finished(self, resolved_count: int):
+        if resolved_count > 0:
+            self.status_label.setText(f"Retry resolver: {resolved_count} URL(s) resolved.")
+            self.load_products()
 
     def start_bot_worker(self):
         self.start_bot_button.setEnabled(False)

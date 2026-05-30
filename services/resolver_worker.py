@@ -7,7 +7,7 @@ Emits signals for started, finished (with results), and error.
 
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 
-from services.resolve_urls_service import resolve_urls_for_products
+from services.resolve_urls_service import resolve_urls_for_products, retry_due_shops
 
 
 class ResolverWorkerSignals(QObject):
@@ -43,5 +43,32 @@ class ResolverWorker(QRunnable):
                 ),
             )
             self.signals.finished.emit(results)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
+class RetryWorkerSignals(QObject):
+    progress = pyqtSignal(int, str, str)  # (product_id, shop_name, resolved_url or "")
+    finished = pyqtSignal(int)            # number of URLs resolved
+    error    = pyqtSignal(str)
+
+
+class RetryWorker(QRunnable):
+    """Retries all ProductShop rows whose scheduled retry time has been reached."""
+
+    def __init__(self):
+        super().__init__()
+        self.signals = RetryWorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            results = retry_due_shops(
+                on_progress=lambda pid, shop, url: self.signals.progress.emit(
+                    pid, shop, url or ""
+                ),
+            )
+            resolved = sum(1 for shops in results.values() for url in shops.values() if url)
+            self.signals.finished.emit(resolved)
         except Exception as e:
             self.signals.error.emit(str(e))

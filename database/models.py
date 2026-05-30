@@ -91,3 +91,7 @@ class ProductShop(Base):
     last_price = Column(Float)
 
     last_notified = Column(DateTime)
+
+    retry_count = Column(Integer, default=0, nullable=False)
+
+    next_retry_at = Column(DateTime, nullable=True)
