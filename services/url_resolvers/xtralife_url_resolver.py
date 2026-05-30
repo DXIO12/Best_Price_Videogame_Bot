@@ -81,7 +81,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
         # Platform filter
         if platform:
             keyword = PLATFORM_MAP.get(platform.strip().lower())
-            print(f"[Xtralife] Platform '{platform}' → keyword '{keyword}'")
 
             if keyword:
                 try:
@@ -102,7 +101,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
                             # Exact match after stripping count
                             if label_clean.lower() == keyword.lower():
                                 option.click()
-                                print(f"[Xtralife]   ✓ Selected: '{raw_label}'")
                                 matched = True
                                 page.wait_for_timeout(500)
                                 break
@@ -133,7 +131,6 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             cards = page.locator(
                 'a.flex.ng-star-inserted[href*="/producto/"]'
             ).all()[:5]
-            print(f"[Xtralife] Cards found: {len(cards)}")
         except PlaywrightTimeout:
             print("[Xtralife] No product cards found.")
             browser.close()
@@ -182,5 +179,4 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             result_href if result_href.startswith("http")
             else f"{BASE_URL}{result_href}"
         )
-        print(f"[Xtralife] Resolved: {result}")
         return result

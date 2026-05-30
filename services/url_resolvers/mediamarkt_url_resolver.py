@@ -64,7 +64,6 @@ def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None)
         for item in items:
             try:
                 title = item.locator('p[data-test="product-title"]').inner_text(timeout=3000).strip().lower()
-                print(f"Found: {title}")
 
                 if platform and platform.lower() not in title:
                     continue
