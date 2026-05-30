@@ -21,9 +21,10 @@ def get_carrefour_price(url):
             #   .buybox__price-strikethrough → 73,01 € (original price)
             # Target the current price span directly.
             SELECTORS = [
-                '.buybox__price--current',
+                '.buybox__price--current',       # sale/offer price (takes priority)
                 '[class*="price--current"]',
                 '[class*="current-price"]',
+                '.buybox__price',                # regular price (no active offer)
             ]
 
             price_text = None

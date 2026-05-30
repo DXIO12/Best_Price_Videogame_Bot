@@ -6,42 +6,29 @@ def get_game_price(url):
 
     try:
         with chromium_page(url) as page:
-            page.wait_for_timeout(8000)
-
             # Accept cookies if banner appears
             try:
                 page.locator(
                     'button#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll'
-                ).click(timeout=3000)
+                ).click(timeout=5000)
                 page.wait_for_timeout(1000)
             except Exception:
                 pass
 
-            # The price is split across three sibling spans:
-            #   <span class="int">49 <small>...</small></span>
-            #   <span class="decimal">'99</span>
-            #   <span class="currency">€</span>
-            # We read .int and .decimal separately and combine them,
-            # ignoring the <small> crossed-out original price inside .int.
+            # Wait for the price container to be attached to the DOM.
+            # state="attached" avoids the "visible" check which fails when the
+            # element exists but Playwright considers it off-screen or zero-size.
+            page.wait_for_selector(".buy--price", state="attached", timeout=20000)
+            page.wait_for_timeout(2000)  # let JS fill in the price text
 
             buy_price = page.locator(".buy--price").first
 
-            # .int contains the integer part BUT also a nested <small> with the
-            # original price — evaluate only the direct text node to avoid it
-            int_part = buy_price.locator(".int").evaluate(
-                """el => {
-                    // Collect only direct text nodes, skip child elements
-                    let text = '';
-                    for (const node of el.childNodes) {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            text += node.textContent;
-                        }
-                    }
-                    return text.trim();
-                }"""
-            )
+            # inner_text() may include a nested <small> original price on a new line
+            # — splitlines()[0] safely gives just the integer part in both cases
+            int_raw = buy_price.locator(".int").inner_text(timeout=10000).strip()
+            int_part = int_raw.splitlines()[0].strip()
 
-            decimal_part = buy_price.locator(".decimal").inner_text().strip()
+            decimal_part = buy_price.locator(".decimal").inner_text(timeout=5000).strip()
 
             # decimal_part is "'99" — strip the apostrophe separator
             decimal_part = decimal_part.lstrip("'").lstrip(",").lstrip(".").strip()
