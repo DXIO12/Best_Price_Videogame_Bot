@@ -3,7 +3,7 @@ from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
 from services.product_service import get_products_with_shops
-from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QThreadPool, Qt
 from database.db import SessionLocal
 from database.models import ProductShop
 from PyQt6.QtWidgets import (
@@ -193,7 +193,9 @@ class MainWindow(QWidget):
         
         for row, (product, platform_value, shop_records) in enumerate(display_rows):
 
-            self.product_table.setItem(row, 0, QTableWidgetItem(product.name))
+            name_item = QTableWidgetItem(product.name)
+            name_item.setData(Qt.ItemDataRole.UserRole, product.id)
+            self.product_table.setItem(row, 0, name_item)
             self.product_table.setItem(row, 1, QTableWidgetItem(platform_value))
             self.product_table.setItem(row, 2, QTableWidgetItem(f"{product.target_price} €"))
 
@@ -213,8 +215,8 @@ class MainWindow(QWidget):
                             continue
                         seen.add(key)
                         label = record.shop.strip()
-                        if record.url:          # manual URL was provided
-                            label += " 📌"
+                        if not record.url:          # manual URL was provided
+                            label += " ✖"
                         parts.append(label)
                     shops_text = ", ".join(parts) if parts else "None"
             else:
@@ -257,9 +259,43 @@ class MainWindow(QWidget):
         worker.signals.started.connect(
             lambda: self.status_label.setText("URL resolver running...")
         )
+        worker.signals.progress.connect(self.on_resolver_progress)
         worker.signals.finished.connect(self.on_resolver_finished)
         worker.signals.error.connect(self.on_resolver_error)
         self.thread_pool.start(worker)
+
+    def on_resolver_progress(self, product_id: int, shop_name: str, url: str):
+        """Called after each individual shop URL is resolved. Updates the Shops cell."""
+        db = SessionLocal()
+        shop_records = db.query(ProductShop).filter(
+            ProductShop.product_id == product_id
+        ).all()
+        db.close()
+
+        all_shops = get_available_shops()
+        norm_all = {s.strip().lower() for s in all_shops}
+        norm_records = {r.shop.strip().lower() for r in shop_records}
+
+        if norm_records == norm_all:
+            shops_text = "ALL"
+        else:
+            seen: set[str] = set()
+            parts: list[str] = []
+            for record in shop_records:
+                key = record.shop.strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                label = record.shop.strip()
+                if not record.url:
+                    label += " ✖"
+                parts.append(label)
+            shops_text = ", ".join(parts) if parts else "None"
+
+        for row in range(self.product_table.rowCount()):
+            item = self.product_table.item(row, 0)
+            if item and item.data(Qt.ItemDataRole.UserRole) == product_id:
+                self.product_table.item(row, 3).setText(shops_text)
 
     def on_resolver_finished(self, results: dict):
         resolved = sum(

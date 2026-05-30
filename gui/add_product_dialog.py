@@ -172,34 +172,17 @@ class MultiSelectDropdown(QWidget):
 class ManualUrlDialog(QDialog):
 
     urls_confirmed = pyqtSignal(dict)
-    name_provided = pyqtSignal(str)
 
-    def __init__(self, shops: list, product_name: str = "", parent=None):
+    def __init__(self, shops: list, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Enter Shop URLs")
         self.resize(550, 400)
         self.shops = shops
-        self.product_name = product_name
         self.url_inputs = {}
         self.setup_ui()
 
     def setup_ui(self):
         layout = QVBoxLayout()
-
-        self.name_row = QWidget()
-        name_layout = QHBoxLayout()
-        name_layout.setContentsMargins(0, 0, 0, 0)
-        name_label = QLabel("Product Name:")
-        name_label.setFixedWidth(130)
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Enter product name")
-        if self.product_name:
-            self.name_input.setText(self.product_name)
-            self.name_row.setVisible(False)
-        name_layout.addWidget(name_label)
-        name_layout.addWidget(self.name_input)
-        self.name_row.setLayout(name_layout)
-        layout.addWidget(self.name_row)
 
         info_label = QLabel(
             "Enter the product URL for each shop (leave blank to auto-resolve):"
@@ -246,17 +229,6 @@ class ManualUrlDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
 
     def on_confirm(self):
-        name = self.name_input.text().strip()
-        if not name:
-            QMessageBox.warning(
-                self,
-                "Missing Product Name",
-                "Please enter a product name before saving."
-            )
-            self.name_row.setVisible(True)
-            self.name_input.setFocus()
-            return
-
         shop_urls = {
             shop: inp.text().strip()
             for shop, inp in self.url_inputs.items()
@@ -275,9 +247,6 @@ class ManualUrlDialog(QDialog):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-
-        if not self.product_name:
-            self.name_provided.emit(name)
 
         self.urls_confirmed.emit(shop_urls)
         self.accept()
@@ -354,13 +323,8 @@ class AddProductDialog(QDialog):
             self.manual_url_checkbox.setChecked(False)
             return
 
-        dialog = ManualUrlDialog(
-            selected_shops,
-            product_name=self.name_input.text().strip(),
-            parent=self
-        )
+        dialog = ManualUrlDialog(selected_shops, parent=self)
         dialog.urls_confirmed.connect(self.on_urls_confirmed)
-        dialog.name_provided.connect(self.on_name_provided)
 
         result = dialog.exec()
 
@@ -368,12 +332,12 @@ class AddProductDialog(QDialog):
             self.manual_shop_urls = {}
             self.manual_url_checkbox.setChecked(False)
 
-    def on_name_provided(self, name: str):
-        self.name_input.setText(name)
-
     def on_urls_confirmed(self, shop_urls: dict):
         self.manual_shop_urls = shop_urls
-        self.save_product()
+        count = len(shop_urls)
+        self.manual_url_checkbox.setText(
+            f"Enter shop URLs manually ({count} entered)" if count else "Enter shop URLs manually"
+        )
 
     def save_product(self):
         name = self.name_input.text().strip()

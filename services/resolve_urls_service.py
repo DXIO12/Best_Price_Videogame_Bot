@@ -36,10 +36,16 @@ RESOLVERS = {
 }
 
 
-def resolve_urls_for_product(product_id: int) -> dict[str, str | None]:
+def resolve_urls_for_product(
+    product_id: int,
+    on_progress=None,
+) -> dict[str, str | None]:
     """
     Resolve missing URLs for all ProductShop rows of a given product.
     Shops that already have a URL (manual entry) are skipped.
+
+    on_progress(product_id, shop_name, resolved_url_or_None) is called after
+    each shop is processed so callers can update the UI incrementally.
 
     Returns a dict of {shop_name: resolved_url_or_None} for every shop processed.
     """
@@ -85,7 +91,6 @@ def resolve_urls_for_product(product_id: int) -> dict[str, str | None]:
             results[record.shop] = None
             continue
 
-        print(f"[Resolver] Resolving {record.shop} → {search_url}")
         try:
             resolved_url = resolver(search_url, platform)
         except Exception as e:
@@ -100,14 +105,20 @@ def resolve_urls_for_product(product_id: int) -> dict[str, str | None]:
 
         results[record.shop] = resolved_url
 
+        if on_progress:
+            on_progress(product_id, record.shop, resolved_url)
+
     db.commit()
     db.close()
     return results
 
 
-def resolve_urls_for_products(product_ids: list[int]) -> dict[int, dict[str, str | None]]:
+def resolve_urls_for_products(
+    product_ids: list[int],
+    on_progress=None,
+) -> dict[int, dict[str, str | None]]:
     """Resolve URLs for multiple products. Returns {product_id: {shop: url}} mapping."""
     all_results = {}
     for pid in product_ids:
-        all_results[pid] = resolve_urls_for_product(pid)
+        all_results[pid] = resolve_urls_for_product(pid, on_progress=on_progress)
     return all_results

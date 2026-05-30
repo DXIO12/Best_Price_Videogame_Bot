@@ -12,7 +12,8 @@ from services.resolve_urls_service import resolve_urls_for_products
 
 class ResolverWorkerSignals(QObject):
     started  = pyqtSignal()
-    finished = pyqtSignal(dict)   # {product_id: {shop: url_or_None}}
+    progress = pyqtSignal(int, str, str)  # (product_id, shop_name, resolved_url or "")
+    finished = pyqtSignal(dict)           # {product_id: {shop: url_or_None}}
     error    = pyqtSignal(str)
 
 
@@ -35,7 +36,12 @@ class ResolverWorker(QRunnable):
     def run(self):
         self.signals.started.emit()
         try:
-            results = resolve_urls_for_products(self.product_ids)
+            results = resolve_urls_for_products(
+                self.product_ids,
+                on_progress=lambda pid, shop, url: self.signals.progress.emit(
+                    pid, shop, url or ""
+                ),
+            )
             self.signals.finished.emit(results)
         except Exception as e:
             self.signals.error.emit(str(e))
