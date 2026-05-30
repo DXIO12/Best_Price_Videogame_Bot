@@ -13,14 +13,10 @@ price-bot/
 │   ├── __init__.py
 │   ├── db.py
 │   ├── init_db.py
-│   ├── last_prices.json
 │   ├── models.py
-│   ├── seed_platforms.py
-│   └── tracker.db
+│   └── seed_platforms.py
 │
 ├── docs/
-│   ├── AI/
-│   │   └── handoff.md
 │   ├── Lauch_Price_Bot_Documentation.md
 │   └── project_structure.md
 │
@@ -40,13 +36,6 @@ price-bot/
 │   ├── start_gui.bat
 │   └── start_gui.sh
 │
-├── project_tests/
-│   ├── telegramtest.py
-│   ├── test.py
-│   ├── test_integration.py
-│   ├── test_product_url_resolver.py
-│   └── test_url_search_service.py
-│
 ├── services/
 │   ├── product_service.py
 │   ├── resolve_urls_service.py
@@ -54,8 +43,6 @@ price-bot/
 │   ├── url_search_service.py
 │   └── url_resolvers/
 │       ├── amazon_url_resolver.py
-│       ├── carrefour_url_resolver.py
-│       ├── corteingles_url_resolver.py
 │       ├── game_url_resolver.py
 │       ├── mediamarkt_url_resolver.py
 │       ├── pccomponentes_url_resolver.py
@@ -66,7 +53,6 @@ price-bot/
 │   ├── amazon.py
 │   ├── carrefour.py
 │   ├── corteingles.py
-│   ├── fnac.py
 │   ├── game.py
 │   ├── mediamarkt.py
 │   ├── pccomponentes.py
@@ -75,8 +61,6 @@ price-bot/
 │   ├── wakkap.py
 │   └── xtralife.py
 │
-├── .env
-├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
@@ -105,12 +89,10 @@ SQLAlchemy models and DB utilities.
 | File | Description |
 | ------ | ----------- |
 | `__init__.py` | Package marker. |
-| `db.py` | Creates the SQLAlchemy engine and `SessionLocal` factory for SQLite (`tracker.db`). |
+| `db.py` | Creates the SQLAlchemy engine and `SessionLocal` factory for SQLite. |
 | `init_db.py` | Creates all tables on first run and runs any `ALTER TABLE` migrations (e.g. adding `retry_count`, `next_retry_at` columns). |
 | `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (bot config). |
 | `seed_platforms.py` | One-off script that inserts the default platform list into the DB. |
-| `last_prices.json` | Legacy JSON file kept for reference; pricing is now stored in `ProductShop.last_price`. |
-| `tracker.db` | SQLite database file. Gitignored. |
 
 ---
 
@@ -120,7 +102,6 @@ Project documentation.
 
 | File | Description |
 | ------ | ----------- |
-| `AI/handoff.md` | Running handoff document for AI sessions: current state, per-session improvements, failed attempts, and pending next steps. |
 | `Lauch_Price_Bot_Documentation.md` | User-facing guide explaining each launcher script (`.sh`, `.bat`, build scripts) and how to run or build the project. |
 | `project_structure.md` | This file. |
 
@@ -156,20 +137,6 @@ Scripts to start or build the project without needing to know the Python environ
 
 ---
 
-### `project_tests/`
-
-Manual and automated test scripts.
-
-| File | Description |
-| ------ | ----------- |
-| `test.py` | General scraper smoke tests. |
-| `telegramtest.py` | Sends a test Telegram message to verify the bot token and chat ID are configured correctly. |
-| `test_integration.py` | Integration tests that exercise the full price-check flow against live URLs. |
-| `test_product_url_resolver.py` | Tests the URL resolver for a specific product against all configured shops. |
-| `test_url_search_service.py` | Tests `url_search_service.py` end-to-end (search query → ranked URL list). |
-
----
-
 ### `services/`
 
 Business logic that sits between the GUI and the scrapers/resolvers.
@@ -188,8 +155,6 @@ One resolver per shop. Each takes a product name and platform string, navigates 
 | File | Description |
 | ------ | ----------- |
 | `amazon_url_resolver.py` | Searches Amazon.es, extracts `/dp/` product links, returns first match. (Improvement pending: scoring + used-listing filter.) |
-| `carrefour_url_resolver.py` | Stub or excluded — Carrefour blocks Playwright via Cloudflare. Manual URL only. |
-| `corteingles_url_resolver.py` | Stub — returns `None`. Implementation pending. |
 | `game_url_resolver.py` | Types into Game.es autocomplete, reads up to 10 results, scores by word overlap, filters second-hand listings, visits tied pages to pick the cheapest. |
 | `mediamarkt_url_resolver.py` | Searches MediaMarkt.es, presses Enter to get results page, scores product cards by name overlap. |
 | `pccomponentes_url_resolver.py` | Searches PCComponentes.com without platform in query, matches `data-product-name` attribute. |
@@ -207,7 +172,6 @@ Playwright scrapers — one per shop. Each exposes a single `get_<shop>_price(ur
 | `amazon.py` | Scrapes the Amazon.es product page buybox price. |
 | `carrefour.py` | Scrapes Carrefour.es. Tries offer-price selectors first (`.buybox__price--current`), falls back to `.buybox__price` for regular price. Manual URL only (Cloudflare blocks the resolver). |
 | `corteingles.py` | Scrapes El Corte Inglés product pages. |
-| `fnac.py` | Scrapes Fnac.es. Bot-detected; manual URL only. |
 | `game.py` | Scrapes Game.es. Uses `state="attached"` wait + 2 s pause to handle the JS-rendered `.buy--price` element. |
 | `mediamarkt.py` | Scrapes MediaMarkt.es product pages. |
 | `pccomponentes.py` | Scrapes PCComponentes.com product pages. |
@@ -222,7 +186,5 @@ Playwright scrapers — one per shop. Each exposes a single `get_<shop>_price(ur
 
 | File | Description |
 | ------ | ----------- |
-| `.env` | Environment variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. **Never committed.** |
-| `.gitignore` | Ignores `venv/`, `.env`, `__pycache__/`, `tracker.db`, `dist/`, `build/`. |
 | `README.md` | Project overview and quick-start instructions. |
 | `requirements.txt` | Python dependencies (PyQt6, Playwright, SQLAlchemy, APScheduler, python-dotenv, etc.). |
