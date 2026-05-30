@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from notifier import send_telegram_message
+from bot.notifier import send_telegram_message
 
 from shops.amazon import get_amazon_price
 from shops.game import get_game_price

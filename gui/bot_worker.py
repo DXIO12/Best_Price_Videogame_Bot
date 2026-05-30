@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 
-from bot import check_prices
+from bot.bot import check_prices
 
 
 class BotWorkerSignals(QObject):
