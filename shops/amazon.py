@@ -8,6 +8,13 @@ def get_amazon_price(url):
             # Let the page fully render
             page.wait_for_timeout(8000)
 
+            # Accept cookies if banner appears
+            try:
+                page.locator('input#sp-cc-accept').click(timeout=5000)
+                page.wait_for_timeout(1500)
+            except Exception:
+                pass
+
             # Get ALL matching elements
             texts = page.locator(".a-price .a-offscreen").all_inner_texts()
 
@@ -27,5 +34,5 @@ def get_amazon_price(url):
             return extract_price(price_text)
 
     except Exception as e:
-        print(f"Game scraper error: {e}")
+        print(f"Amazon scraper error: {e}")
         return None

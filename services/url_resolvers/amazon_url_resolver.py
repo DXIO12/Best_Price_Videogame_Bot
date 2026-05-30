@@ -12,7 +12,7 @@ def clean_amazon_url(href: str) -> str | None:
     return None
 
 
-def resolve_amazon_product_url(search_url):
+def resolve_amazon_product_url(search_url, platform: str | None = None):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(

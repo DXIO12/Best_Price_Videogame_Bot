@@ -42,7 +42,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
 
         # Wait for autocomplete results
         try:
-            page.wait_for_selector('li.ui-search-menu-item a', timeout=10000)
+            page.wait_for_selector('a.ui-search-menu-item-wrapper', timeout=10000)
         except PlaywrightTimeout:
             print("Autocomplete results did not appear.")
             browser.close()
@@ -50,7 +50,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
         
         # Always take the first result
         try:
-            first_item = page.locator('li.ui-search-menu-item a').first
+            first_item = page.locator('a.ui-search-menu-item-wrapper').first
             href = first_item.get_attribute("href", timeout=3000)
         except:
             href = None
