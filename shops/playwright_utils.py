@@ -1,6 +1,10 @@
+import sys
 from contextlib import contextmanager
 
 from playwright.sync_api import sync_playwright
+
+# Headless when running as a frozen executable; visible in dev/debug mode.
+_HEADLESS = getattr(sys, "frozen", False)
 
 
 DEFAULT_USER_AGENT = (
@@ -58,8 +62,8 @@ class BrowserManager:
                 pass
 
 
-browser_manager = BrowserManager()
-firefox_manager = BrowserManager(browser_name="firefox")
+browser_manager = BrowserManager(headless=_HEADLESS)
+firefox_manager = BrowserManager(headless=_HEADLESS, browser_name="firefox")
 
 
 @contextmanager
