@@ -1,6 +1,6 @@
 from sqlalchemy import text
-from database.db import engine
-from database.models import Base
+from database.db import engine, SessionLocal
+from database.models import Base, Platform
 
 Base.metadata.create_all(bind=engine)
 
@@ -16,5 +16,15 @@ with engine.connect() as conn:
             conn.commit()
         except Exception:
             pass  # column already exists
+
+# Seed platforms (idempotent — skips any that already exist)
+_PLATFORMS = ["PS5", "NS2", "NS", "PC", "Xbox Series X"]
+
+db = SessionLocal()
+for name in _PLATFORMS:
+    if not db.query(Platform).filter(Platform.name == name).first():
+        db.add(Platform(name=name))
+db.commit()
+db.close()
 
 print("Database initialised.")
