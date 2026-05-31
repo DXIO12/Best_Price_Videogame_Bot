@@ -4,12 +4,12 @@ from urllib.parse import unquote_plus
 BASE_URL = "https://wakkap.com/search/filter/on-sale"
 
 PLATFORM_MAP = {
-    "ps5": "ps5",
-    "ns2": "nsw2",
-    "ns": "switch",
-    "ps4": "ps4",
-    "pc": "pc",
-    "xbox series x": "xbox-series",
+    "ps5":           "Playstation 5",
+    "switch 2":      "Nintendo Switch 2",
+    "switch":        "Nintendo Switch",
+    "ps4":           "Sony Playstation 4",
+    "pc":            "PC",
+    "xbox series x": "Xbox Series",
 }
 
 
@@ -71,8 +71,8 @@ def resolve_wakkap_product_url(search_url: str, platform: str | None = None):
                 try:
                     page.locator('div.section-3 div.cmp-dropdown').nth(1).click(timeout=5000)
                     page.wait_for_timeout(1000)
-                    page.locator(
-                        f'div.select-items div.item[value="{platform_value}"]'
+                    page.locator('div.select-items div.cmp-button').filter(
+                        has_text=platform_value
                     ).first.click(timeout=5000)
                     page.wait_for_timeout(1000)
                 except Exception as e:

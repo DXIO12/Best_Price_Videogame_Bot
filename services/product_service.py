@@ -2,6 +2,23 @@ from database.db import SessionLocal
 from sqlalchemy.orm import joinedload
 from database.models import (Product, ProductShop, Platform)
 
+# Maps GUI display labels → DB-stored names (and reverse).
+# Update this dict whenever a platform is renamed in the DB.
+_PLATFORM_GUI_TO_DB = {
+    "NS2": "Switch 2",
+    "NS":  "Switch",
+}
+_PLATFORM_DB_TO_GUI = {v: k for k, v in _PLATFORM_GUI_TO_DB.items()}
+
+
+def _to_db_names(gui_names: list[str]) -> list[str]:
+    return [_PLATFORM_GUI_TO_DB.get(n, n) for n in gui_names]
+
+
+def to_gui_names(db_names: list[str]) -> list[str]:
+    """Translate DB-stored platform names back to GUI display labels."""
+    return [_PLATFORM_DB_TO_GUI.get(n, n) for n in db_names]
+
 def create_product(name, platforms, target_price, shops=None, shop_urls=None):
 
     db = SessionLocal()
@@ -9,7 +26,7 @@ def create_product(name, platforms, target_price, shops=None, shop_urls=None):
     platform_objects = db.query(
         Platform
     ).filter(
-        Platform.name.in_(platforms)
+        Platform.name.in_(_to_db_names(platforms))
     ).all()
 
     product = Product(name=name, target_price=target_price)
@@ -164,7 +181,7 @@ def modify_product(product_id, new_platforms, new_name=None, new_target_price=No
     # Update platform relationships
     if new_platforms:
         cleaned = [p.strip() for p in new_platforms if p.strip()]
-        platform_objects = db.query(Platform).filter(Platform.name.in_(cleaned)).all()
+        platform_objects = db.query(Platform).filter(Platform.name.in_(_to_db_names(cleaned))).all()
         product.platforms = platform_objects
 
     # Update name if provided

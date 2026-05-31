@@ -3,7 +3,7 @@ from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
 from gui.settings_bot import SettingsBotDialog
-from services.product_service import get_products_with_shops
+from services.product_service import get_products_with_shops, to_gui_names
 from PyQt6.QtCore import QThreadPool, Qt, QTimer
 from database.db import SessionLocal
 from database.models import ProductShop, Setting
@@ -233,7 +233,7 @@ class MainWindow(QWidget):
         display_rows = []
         for product, shop_records in products_with_shops:
             if product.platforms:
-                plats = [platform.name for platform in product.platforms]
+                plats = to_gui_names([p.name for p in product.platforms])
             else:
                 plats = ['']
             for plat in plats:

@@ -2,6 +2,14 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 BASE_URL = "https://www.pccomponentes.com"
 
+PLATFORM_MAP = {
+    "ps5": "ps5",
+    "ns2": "switch 2",
+    "ns": "switch",
+    "ps4": "ps4",
+    "pc": "pc",
+    "xbox series x": "xbox-series",
+}
 
 def resolve_pccomponentes_product_url(search_url: str, platform: str | None = None):
     with sync_playwright() as p:

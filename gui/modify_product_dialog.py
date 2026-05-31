@@ -1,4 +1,4 @@
-from services.product_service import modify_product, get_products
+from services.product_service import modify_product, get_products, to_gui_names
 from gui.add_product_dialog import MultiSelectDropdown, get_available_shops
 from database.db import SessionLocal
 from database.models import ProductShop
@@ -109,7 +109,7 @@ class ModifyProductDialog(QDialog):
 
         for product in products:
             if product.platforms:
-                plats = [platform.name for platform in product.platforms]
+                plats = to_gui_names([p.name for p in product.platforms])
             else:
                 plats = ['']
 

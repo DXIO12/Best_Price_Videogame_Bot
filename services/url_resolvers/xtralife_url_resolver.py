@@ -11,8 +11,8 @@ BASE_URL = "https://www.xtralife.com"
 PLATFORM_MAP = {
     "ps5":           "PS5",
     "ps4":           "PS4",
-    "ns2":           "Switch 2",
-    "ns":            "Switch",
+    "switch 2":      "Switch 2",
+    "switch":        "Switch",
     "pc":            "PC",
     "xbox series x": "Xbox Series",
 }

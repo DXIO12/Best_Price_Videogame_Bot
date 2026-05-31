@@ -18,7 +18,7 @@ with engine.connect() as conn:
             pass  # column already exists
 
 # Seed platforms (idempotent — skips any that already exist)
-_PLATFORMS = ["PS5", "NS2", "NS", "PC", "Xbox Series X"]
+_PLATFORMS = ["PS5", "Switch 2", "Switch", "PC", "Xbox Series X"]
 
 db = SessionLocal()
 for name in _PLATFORMS:

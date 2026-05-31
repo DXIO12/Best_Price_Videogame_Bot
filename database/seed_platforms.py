@@ -3,8 +3,8 @@ from database.models import Platform
 
 platforms = [
     "PS5",
-    "NS2",
-    "NS",
+    "Switch 2",
+    "Switch",
     "PC",
     "Xbox Series X"
 ]
