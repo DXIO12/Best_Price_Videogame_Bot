@@ -257,6 +257,7 @@ class ModifyProductDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
+            print(f"===================================")
             for product_id, changes in selected_changes.items():
                 modify_product(
                     product_id,

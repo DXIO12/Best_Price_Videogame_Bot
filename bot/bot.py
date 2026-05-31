@@ -59,7 +59,7 @@ def load_settings() -> dict:
             "check_interval_minutes": setting.check_interval_minutes or 30,
             "notify_only_best_price": setting.notify_only_best_price if setting.notify_only_best_price is not None else False,
             "repeat_notifications": setting.repeat_notifications if setting.repeat_notifications is not None else True,
-            "repeat_notification_hours": setting.repeat_notification_hours or 3,
+            "repeat_notification_minutes": setting.repeat_notification_minutes or 90,
         }
 
     # Defaults when no settings row exists
@@ -67,7 +67,7 @@ def load_settings() -> dict:
         "check_interval_minutes": 30,
         "notify_only_best_price": False,
         "repeat_notifications": True,
-        "repeat_notification_hours": 3,
+        "repeat_notification_minutes": 90,
     }
 
 
@@ -95,8 +95,8 @@ def should_notify(shop_record: ProductShop, current_price: float, settings: dict
         # last_notified may be naive (SQLite stores without tz); normalise it
         if last_notified.tzinfo is None:
             last_notified = last_notified.replace(tzinfo=timezone.utc)
-        hours_passed = (now - last_notified).total_seconds() / 3600
-        if hours_passed >= settings["repeat_notification_hours"]:
+        minutes_passed = (now - last_notified).total_seconds() / 60
+        if minutes_passed >= settings["repeat_notification_minutes"]:
             return True
 
     return False

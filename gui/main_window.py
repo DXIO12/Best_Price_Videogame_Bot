@@ -2,10 +2,11 @@ import sys
 from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
+from gui.settings_bot import SettingsBotDialog
 from services.product_service import get_products_with_shops
 from PyQt6.QtCore import QThreadPool, Qt, QTimer
 from database.db import SessionLocal
-from database.models import ProductShop
+from database.models import ProductShop, Setting
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -74,6 +75,11 @@ class MainWindow(QWidget):
         )
         self.update_urls_button.setMinimumWidth(180)
 
+        self.settings_bot_button = QPushButton(
+            "Settings Bot"
+        )
+        self.settings_bot_button.setMinimumWidth(180)
+
         self.start_bot_button = QPushButton(
             "Start Bot"
         )
@@ -90,6 +96,7 @@ class MainWindow(QWidget):
             self.open_modify_product_dialog
         )
         self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
+        self.settings_bot_button.clicked.connect(self.open_settings_bot_dialog)
         self.start_bot_button.clicked.connect(self.start_bot_worker)
 
         button_layout.addWidget(
@@ -129,10 +136,17 @@ class MainWindow(QWidget):
 
         main_layout.addWidget(self.product_table)
 
-        # UPDATE URLs + START BOT BUTTONS BELOW THE TABLE
+        # UPDATE URLs + SETTINGS BOT (row 1)
+        control_button_layout = QHBoxLayout()
+        control_button_layout.addStretch()
+        control_button_layout.addWidget(self.update_urls_button)
+        control_button_layout.addWidget(self.settings_bot_button)
+        control_button_layout.addStretch()
+        main_layout.addLayout(control_button_layout)
+
+        # START BOT (row 2, centered)
         start_button_layout = QHBoxLayout()
         start_button_layout.addStretch()
-        start_button_layout.addWidget(self.update_urls_button)
         start_button_layout.addWidget(self.start_bot_button)
         start_button_layout.addStretch()
         main_layout.addLayout(start_button_layout)
@@ -358,7 +372,32 @@ class MainWindow(QWidget):
             self.status_label.setText(f"Retry resolver: {resolved_count} URL(s) resolved.")
             self.load_products()
 
+    # =========================================
+    # OPEN SETTINGS BOT DIALOG
+    # =========================================
+
+    def open_settings_bot_dialog(self):
+        dialog = SettingsBotDialog(parent=self)
+        dialog.exec()
+
+    # =========================================
+    # START BOT
+    # =========================================
+
     def start_bot_worker(self):
+        db = SessionLocal()
+        setting = db.query(Setting).first()
+        db.close()
+
+        if setting is None:
+            dialog = SettingsBotDialog(parent=self, auto_start=True)
+            dialog.settings_saved.connect(self._launch_bot_worker)
+            dialog.exec()
+            return
+
+        self._launch_bot_worker()
+
+    def _launch_bot_worker(self):
         self.start_bot_button.setEnabled(False)
         self.status_label.setText("Starting bot...")
 

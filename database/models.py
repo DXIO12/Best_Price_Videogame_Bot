@@ -53,7 +53,7 @@ class Setting(Base):
 
     repeat_notifications = Column(Boolean)
 
-    repeat_notification_hours = Column(Integer)
+    repeat_notification_minutes = Column(Integer)
 
 
 class Product(Base):
