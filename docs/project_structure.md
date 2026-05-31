@@ -26,7 +26,8 @@ price-bot/
 │   ├── bot_worker.py
 │   ├── delete_product_dialog.py
 │   ├── main_window.py
-│   └── modify_product_dialog.py
+│   ├── modify_product_dialog.py
+│   └── settings_bot.py
 │
 ├── launcher/
 │   ├── build_exe.bat
@@ -77,8 +78,8 @@ The headless bot package. Runs independently of the GUI on a schedule.
 | ------ | ----------- |
 | `__init__.py` | Marks `bot/` as a Python package so it can be imported as `bot.bot`, `bot.notifier`, etc. |
 | `bot.py` | Main bot entry point. Loads settings from the DB, scrapes all product URLs on a schedule (APScheduler), compares prices against targets, and sends Telegram notifications. Contains `check_prices()`, `_scrape()`, `should_notify()`, and `save_shop_record()`. |
-| `config.json` | Static configuration (shop names, default settings). Read by `bot.py` at startup. |
-| `notifier.py` | Sends Telegram messages via the Bot API using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from `.env`. |
+| `config.json` | Legacy reference file. Bot settings are now read from the `Setting` table in the DB (configured via the Settings Bot dialog in the GUI). This file is no longer used at runtime. |
+| `notifier.py` | Sends Telegram messages via the Bot API using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from `.env`. Enforces a 10 s timeout and redacts the bot token from any error message before printing. |
 
 ---
 
@@ -89,9 +90,9 @@ SQLAlchemy models and DB utilities.
 | File | Description |
 | ------ | ----------- |
 | `__init__.py` | Package marker. |
-| `db.py` | Creates the SQLAlchemy engine and `SessionLocal` factory for SQLite. |
-| `init_db.py` | Creates all tables on first run and runs any `ALTER TABLE` migrations (e.g. adding `retry_count`, `next_retry_at` columns). |
-| `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (bot config). |
+| `db.py` | Creates the SQLAlchemy engine and `SessionLocal` factory for SQLite. Uses `Path(__file__).resolve().parent` to build an absolute path to `tracker.db`, so the DB is always found regardless of the working directory. |
+| `init_db.py` | Creates all tables on first run and runs `ALTER TABLE` migrations automatically (adds `retry_count`, `next_retry_at`, `repeat_notification_minutes` if they don't exist). Safe to run multiple times. Called by all launchers before starting the app. |
+| `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (check_interval_minutes, notify_only_best_price, repeat_notifications, repeat_notification_minutes). |
 | `seed_platforms.py` | One-off script that inserts the default platform list into the DB. |
 
 ---
@@ -114,11 +115,12 @@ PyQt6 desktop application.
 | File | Description |
 | ------ | ----------- |
 | `__init__.py` | Package marker. |
-| `main_window.py` | Main application window. Renders the product table (Product, Platform, Target Price, Shops, Best Price), handles toolbar actions (Add, Delete, Modify, Start/Stop Bot, Resolve URLs), drives the retry timer (`QTimer` every 5 min), and updates Shops cells incrementally as URLs resolve. |
+| `main_window.py` | Main application window. Renders the product table (Product, Platform, Target Price, Shops, Best Price). Toolbar: Add, Delete, Modify Product. Bottom row 1: Update URLs, Settings Bot. Bottom row 2: Start Bot (centered). If Start Bot is pressed without settings configured, opens Settings Bot dialog first. Drives the retry timer (`QTimer` every 5 min) and updates Shops cells incrementally as URLs resolve. |
 | `add_product_dialog.py` | Dialog to add a new product. Lets the user pick platforms, set a target price, and either auto-resolve shop URLs or enter them manually via `ManualUrlDialog`. Prints a summary to the terminal on save. |
-| `delete_product_dialog.py` | Dialog to select and delete a product and all its associated `ProductShop` rows. Prints deleted product/platform info to the terminal. |
-| `modify_product_dialog.py` | Dialog to edit an existing product's name, platforms, or target price. Only prints the attributes that actually changed (before → after). |
 | `bot_worker.py` | `QRunnable` that calls `check_prices()` from `bot.bot` in a background thread. Emits `started`, `finished`, and `error` signals to keep the GUI responsive. |
+| `delete_product_dialog.py` | Dialog to select and delete a product and all its associated `ProductShop` rows. Prints deleted product/platform info to the terminal. |
+| `modify_product_dialog.py` | Dialog to edit an existing product's name, platforms, target price, and shop configuration. Columns: Modify (checkbox), Product, Platform, Shops, Target Price. The Shops button opens `ShopManagerDialog`. Changes are staged in memory and only written to the DB when "Apply Changes" is clicked. |
+| `settings_bot.py` | `SettingsBotDialog` — configures bot behaviour: check interval, notify-only-best-price, repeat notifications, and the repeat cooldown in minutes. Each field has a circular ℹ button with a description popup. The repeat-cooldown field is disabled when repeat notifications are off. Saves to the `Setting` DB table with an overwrite warning. Supports `auto_start=True` mode (button label becomes "Save & Start Bot") used when the user launches the bot without prior configuration. |
 
 ---
 
@@ -128,11 +130,11 @@ Scripts to start or build the project without needing to know the Python environ
 
 | File | Description |
 | ------ | ----------- |
-| `start_bot.sh` | Linux/macOS — activates `venv/` and runs the headless bot (`bot/bot.py`). |
+| `start_gui.sh` | Linux/macOS — `cd`s to the project root, activates `venv/`, restricts `.env` to owner-only (`chmod 600`), runs `init_db`, and launches the PyQt6 GUI. |
+| `start_gui.bat` | Windows equivalent of `start_gui.sh`. Uses `icacls` to restrict `.env` permissions. |
+| `start_bot.sh` | Linux/macOS — same setup as `start_gui.sh`, then runs the headless bot (`python -m bot.bot`). |
 | `start_bot.bat` | Windows equivalent of `start_bot.sh`. |
-| `start_gui.sh` | Linux/macOS — activates `venv/` and launches the PyQt6 GUI (`python -m gui.main_window`). |
-| `start_gui.bat` | Windows equivalent of `start_gui.sh`. |
-| `build_exe.sh` | Linux/macOS — uses PyInstaller to build a standalone `dist/price_bot_gui/` directory. Note: `playwright install chromium` must be run on the target machine separately. |
+| `build_exe.sh` | Linux/macOS — uses PyInstaller to build a standalone `dist/price_bot_gui/` directory (bundles `gui/`, `bot/`, `database/`, `shops/`, `services/`). Note: `playwright install chromium` must be run on the target machine separately. |
 | `build_exe.bat` | Windows equivalent of `build_exe.sh`. |
 
 ---
