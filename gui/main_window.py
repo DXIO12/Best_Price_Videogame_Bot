@@ -15,7 +15,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView
+    QHeaderView,
+    QMessageBox
 )
 
 from gui.bot_worker import BotWorker
@@ -68,6 +69,11 @@ class MainWindow(QWidget):
             "Modify Product"
         )
 
+        self.update_urls_button = QPushButton(
+            "Update URLs"
+        )
+        self.update_urls_button.setMinimumWidth(180)
+
         self.start_bot_button = QPushButton(
             "Start Bot"
         )
@@ -83,6 +89,7 @@ class MainWindow(QWidget):
         self.modify_product_button.clicked.connect(
             self.open_modify_product_dialog
         )
+        self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
         self.start_bot_button.clicked.connect(self.start_bot_worker)
 
         button_layout.addWidget(
@@ -122,9 +129,10 @@ class MainWindow(QWidget):
 
         main_layout.addWidget(self.product_table)
 
-        # START BOT BUTTON BELOW DELETE/ADD/OTHER BUTTONS
+        # UPDATE URLs + START BOT BUTTONS BELOW THE TABLE
         start_button_layout = QHBoxLayout()
         start_button_layout.addStretch()
+        start_button_layout.addWidget(self.update_urls_button)
         start_button_layout.addWidget(self.start_bot_button)
         start_button_layout.addStretch()
         main_layout.addLayout(start_button_layout)
@@ -168,8 +176,6 @@ class MainWindow(QWidget):
         
         # Refresh table when product is modified
         dialog.product_modified.connect(self.load_products)
-        # Trigger resolver when user clicks "Resolve URLs" in the dialog
-        dialog.resolve_urls_requested.connect(self.start_resolver_worker)
         dialog.exec()
 
     # =========================================
@@ -258,6 +264,35 @@ class MainWindow(QWidget):
         ROW_HEIGHT = 36
         for row in range(self.product_table.rowCount()):
             self.product_table.setRowHeight(row, ROW_HEIGHT)
+
+    # =========================================
+    # UPDATE URLs BUTTON (main window)
+    # =========================================
+
+    def on_update_urls_clicked(self):
+        """Resolve missing URLs for all products currently shown in the table."""
+        product_ids = set()
+        for row in range(self.product_table.rowCount()):
+            item = self.product_table.item(row, 0)
+            if item:
+                pid = item.data(Qt.ItemDataRole.UserRole)
+                if pid is not None:
+                    product_ids.add(pid)
+
+        if not product_ids:
+            QMessageBox.information(self, "No products", "No products found in the table.")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Update URLs",
+            f"Update missing URLs for {len(product_ids)} product(s)?\n"
+            "Only shops without a URL will be updated.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.start_resolver_worker(list(product_ids))
 
     # =========================================
     # PRODUCT ADDED → AUTO RESOLVE URLS
