@@ -9,6 +9,10 @@ call venv\Scripts\activate.bat
 
 pip install pyinstaller --quiet
 
+REM Remove local DB so no test data is bundled in the package.
+REM The app creates a fresh tracker.db next to the executable on first run.
+if exist database\tracker.db del /f database\tracker.db
+
 pyinstaller ^
     --noconfirm ^
     --onedir ^

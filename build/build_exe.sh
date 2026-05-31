@@ -10,6 +10,10 @@ source venv/bin/activate
 
 pip install pyinstaller --quiet
 
+# Remove local DB so no test data is bundled in the package.
+# The app creates a fresh tracker.db next to the executable on first run.
+rm -f database/tracker.db
+
 pyinstaller \
     --noconfirm \
     --onedir \
