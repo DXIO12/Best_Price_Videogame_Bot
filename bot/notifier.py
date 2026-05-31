@@ -15,7 +15,9 @@ def send_telegram_message(bot_token, chat_id, message):
         if response.status_code == 200:
             print("[Notifier]: Telegram notification sent successfully.")
         else:
-            print(f"[Notifier]: Telegram error: {response.text}")
+            safe = response.text.replace(bot_token, "***")
+            print(f"[Notifier]: Telegram error: {safe}")
 
     except Exception as e:
-        print(f"[Notifier]: Error sending Telegram notification: {e}")
+        safe = str(e).replace(bot_token, "***")
+        print(f"[Notifier]: Error sending Telegram notification: {safe}")
