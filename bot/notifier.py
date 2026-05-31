@@ -10,12 +10,12 @@ def send_telegram_message(bot_token, chat_id, message):
     }
 
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
 
         if response.status_code == 200:
-            print("Telegram notification sent successfully.")
+            print("[Notifier]: Telegram notification sent successfully.")
         else:
-            print(f"Telegram error: {response.text}")
+            print(f"[Notifier]: Telegram error: {response.text}")
 
     except Exception as e:
-        print(f"Error sending Telegram notification: {e}")
+        print(f"[Notifier]: Error sending Telegram notification: {e}")
