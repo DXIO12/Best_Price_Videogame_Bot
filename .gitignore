@@ -54,3 +54,10 @@ services/url_resolvers/corteingles_url_resolver.py
 # Tests
 # =========================================
 project_tests/
+
+# =========================================
+# Build artifacts (PyInstaller)
+# =========================================
+dist/
+build/
+*.spec
