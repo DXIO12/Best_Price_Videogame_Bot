@@ -1,10 +1,12 @@
+import os
 import sys
 from contextlib import contextmanager
 
 from playwright.sync_api import sync_playwright
 
-# Headless when running as a frozen executable; visible in dev/debug mode.
-_HEADLESS = getattr(sys, "frozen", False)
+# Headless when running as a frozen executable or launched via a launcher script.
+# Direct `python -m ...` invocations leave both flags unset → visible (debug mode).
+_HEADLESS = getattr(sys, "frozen", False) or os.environ.get("PRICE_BOT_HEADLESS") == "1"
 
 
 DEFAULT_USER_AGENT = (
