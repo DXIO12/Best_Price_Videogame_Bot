@@ -376,6 +376,11 @@ class AddProductDialog(QDialog):
                 shops_info.append(f"{shop} (manual URL)")
             else:
                 shops_info.append(f"{shop} (resolver)")
+        # Include manual-URL-only shops not present in the dropdown selection
+        selected_lower = {s.lower() for s in selected_shops}
+        for shop_key in self.manual_shop_urls:
+            if shop_key not in selected_lower:
+                shops_info.append(f"{shop_key.capitalize()} (manual URL)")
         print(f"===================================")
         print(f"[Add] Product saved: '{name}'")
         print(f"[Add] Platforms   : {', '.join(selected_platforms)}")

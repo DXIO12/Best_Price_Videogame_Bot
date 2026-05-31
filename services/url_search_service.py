@@ -5,6 +5,10 @@ from sqlalchemy.orm import joinedload
 from database.db import SessionLocal
 from database.models import Product, ProductShop
 
+# These shops apply platform filtering via on-site UI — platform must not be
+# appended to the search query or it will pollute/break the search results.
+_SHOPS_WITH_PLATFORM_FILTER = {"wakkap", "xtralife"}
+
 SHOP_SEARCH_PATTERNS = {
     "amazon": "https://www.amazon.es/s?k={query}",
     "game": "https://www.game.es/buscar?text={query}",
@@ -42,7 +46,8 @@ def get_search_url(shop_name: str, product_name: str, platform: str | None = Non
     if not pattern:
         return ""
 
-    query = build_search_query(product_name, platform)
+    effective_platform = None if key in _SHOPS_WITH_PLATFORM_FILTER else platform
+    query = build_search_query(product_name, effective_platform)
     if not query:
         return ""
 
