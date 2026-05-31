@@ -17,6 +17,7 @@ price-bot/
 │   └── seed_platforms.py
 │
 ├── docs/
+│   ├── dependencies.md
 │   ├── Lauch_Price_Bot_Documentation.md
 │   └── project_structure.md
 │
@@ -103,6 +104,7 @@ Project documentation.
 
 | File | Description |
 | ------ | ----------- |
+| `dependencies.md` | Annotated list of all runtime dependencies with version notes and the post-install Playwright step. |
 | `Lauch_Price_Bot_Documentation.md` | User-facing guide explaining each launcher script (`.sh`, `.bat`, build scripts) and how to run or build the project. |
 | `project_structure.md` | This file. |
 
