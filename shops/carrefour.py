@@ -11,7 +11,6 @@ def get_carrefour_price(url):
             # Accept cookies
             try:
                 page.locator('button#onetrust-accept-btn-handler').click(timeout=8000)
-                print("Cookies accepted.")
                 page.wait_for_timeout(2000)
             except:
                 print("Cookie button not found or already accepted.")
