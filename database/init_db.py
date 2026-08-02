@@ -9,6 +9,7 @@ with engine.connect() as conn:
     for stmt in [
         "ALTER TABLE product_shops ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE product_shops ADD COLUMN next_retry_at DATETIME",
+        "ALTER TABLE product_shops ADD COLUMN available BOOLEAN",
         "ALTER TABLE settings ADD COLUMN repeat_notification_minutes INTEGER",
     ]:
         try:

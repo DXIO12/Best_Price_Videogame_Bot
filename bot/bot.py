@@ -109,8 +109,19 @@ def should_notify(shop_record: ProductShop, current_price: float, settings: dict
 def save_shop_record(db, shop_record: ProductShop, price: float, notified: bool):
     """Update last_price and optionally last_notified on the ProductShop row."""
     shop_record.last_price = price
+    shop_record.available = True
     if notified:
         shop_record.last_notified = datetime.now(timezone.utc)
+    db.commit()
+
+
+def mark_unavailable(db, shop_record: ProductShop):
+    """Flag a shop as having no price in the most recent check.
+
+    The URL exists but the scraper returned no price (product out of stock /
+    no buybox). We keep the historical last_price but record that the product is
+    currently unavailable so the GUI can show it instead of a stale price."""
+    shop_record.available = False
     db.commit()
 
 
@@ -194,6 +205,8 @@ def _check_best_price(db, product_name: str, target_price: float,
             save_shop_record(db, record, price, notified=False)
             if price <= target_price:
                 hits.append((price, record))
+        elif record.url and record.url.strip():
+            mark_unavailable(db, record)
 
     if not hits:
         print(f"  No prices at or below target for {product_name}.")
@@ -221,6 +234,8 @@ def _check_all_shops(db, product_name: str, target_price: float,
         price = _scrape(record)
 
         if price is None:
+            if record.url and record.url.strip():
+                mark_unavailable(db, record)
             continue
 
         # Always persist the latest price

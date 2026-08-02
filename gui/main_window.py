@@ -127,6 +127,14 @@ class MainWindow(QWidget):
             "Best Price"
         ])
 
+        self.product_table.horizontalHeaderItem(3).setToolTip(
+            "Shop status icons:\n"
+            "✖  no URL yet\n"
+            "⏳  URL failed — retry scheduled\n"
+            "⚠  URL failed — retries exhausted\n"
+            "⚠ (yellow)  no price found (product unavailable)"
+        )
+
         self.product_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.product_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -196,13 +204,28 @@ class MainWindow(QWidget):
     # LOAD PRODUCTS IN THE TABLE
     # =========================================
 
+    # Yellow warning marker for a shop that resolved a URL but has no price.
+    UNAVAILABLE_MARKER = ' <span style="color:#e6b800;">⚠</span>'
+
     @staticmethod
-    def _build_shops_text(shop_records, all_shops) -> str:
-        """Build the Shops column text for one product row."""
+    def _build_shops_html(shop_records, all_shops) -> str:
+        """Build the Shops column as rich text (HTML) for one product row.
+
+        Per-shop markers:
+          ✖  no URL yet (first attempt not done)
+          ⏳  URL failed, retry scheduled
+          ⚠  URL failed, all retries exhausted
+          ⚠ (yellow)  URL resolved but the last check found no price (unavailable)
+        Collapses to "ALL" only when every shop has a URL and none are unavailable.
+        """
+        from html import escape
+
         norm_all = {s.strip().lower() for s in all_shops}
         norm_records = {r.shop.strip().lower() for r in shop_records}
 
-        if norm_records == norm_all and all(r.url for r in shop_records):
+        all_have_url = norm_records == norm_all and all(r.url for r in shop_records)
+        none_unavailable = all(r.available is not False for r in shop_records)
+        if all_have_url and none_unavailable:
             return "ALL"
 
         seen: set[str] = set()
@@ -212,7 +235,7 @@ class MainWindow(QWidget):
             if key in seen:
                 continue
             seen.add(key)
-            label = record.shop.strip()
+            label = escape(record.shop.strip())
             if not record.url:
                 retry = record.retry_count or 0
                 if retry > MAX_RETRIES:
@@ -221,8 +244,23 @@ class MainWindow(QWidget):
                     label += " ⏳"      # failed but retry scheduled
                 else:
                     label += " ✖"       # first attempt not yet done
+            elif record.available is False:
+                label += MainWindow.UNAVAILABLE_MARKER  # yellow ⚠ — no price found
             parts.append(label)
         return ", ".join(parts) if parts else "None"
+
+    def _set_shops_cell(self, row: int, shop_records, all_shops):
+        """Render the Shops cell as a rich-text QLabel so the yellow ⚠ marker
+        can be coloured independently of the rest of the cell text."""
+        html = self._build_shops_html(shop_records, all_shops)
+        widget = self.product_table.cellWidget(row, 3)
+        if isinstance(widget, QLabel):
+            widget.setText(html)
+            return
+        label = QLabel(html)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setContentsMargins(4, 0, 4, 0)
+        self.product_table.setCellWidget(row, 3, label)
 
     def load_products(self):
 
@@ -253,21 +291,19 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 1, QTableWidgetItem(platform_value))
             self.product_table.setItem(row, 2, QTableWidgetItem(f"{product.target_price} €"))
 
-            shops_text = (
-                self._build_shops_text(shop_records, all_shops)
-                if shop_records else "None"
-            )
+            self._set_shops_cell(row, shop_records, all_shops)
 
-            self.product_table.setItem(row, 3, QTableWidgetItem(shops_text))
-
-            # Best price column — lowest last_price across all shops for this product
-            shop_db_records = db.query(ProductShop).filter(
+            # Best price column — lowest price among shops that currently have
+            # one. Unavailable shops are excluded so a stale price is never shown;
+            # which shops are unavailable is surfaced per-shop in the Shops column.
+            priced = db.query(ProductShop).filter(
                 ProductShop.product_id == product.id,
+                ProductShop.available.is_(True),
                 ProductShop.last_price.isnot(None)
             ).all()
 
-            if shop_db_records:
-                best_price = min(s.last_price for s in shop_db_records)
+            if priced:
+                best_price = min(s.last_price for s in priced)
                 best_price_text = f"{best_price:.2f} €"
             else:
                 best_price_text = "—"
@@ -338,12 +374,11 @@ class MainWindow(QWidget):
         db.close()
 
         all_shops = get_available_shops()
-        shops_text = self._build_shops_text(shop_records, all_shops)
 
         for row in range(self.product_table.rowCount()):
             item = self.product_table.item(row, 0)
             if item and item.data(Qt.ItemDataRole.UserRole) == product_id:
-                self.product_table.item(row, 3).setText(shops_text)
+                self._set_shops_cell(row, shop_records, all_shops)
 
     def on_resolver_finished(self, results: dict):
         resolved = sum(

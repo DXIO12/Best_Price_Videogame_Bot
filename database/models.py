@@ -90,6 +90,12 @@ class ProductShop(Base):
 
     last_price = Column(Float)
 
+    # Availability from the most recent price check:
+    #   None  = never checked (or no URL yet)
+    #   True  = last check found a price
+    #   False = last check ran but the shop had no price (product unavailable)
+    available = Column(Boolean, nullable=True)
+
     last_notified = Column(DateTime)
 
     retry_count = Column(Integer, default=0, nullable=False)
