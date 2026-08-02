@@ -15,12 +15,21 @@ def get_wakkap_price(url):
             except:
                 pass
 
+            # Scope to the main product summary so we never read a price from a
+            # recommendation card if this product has none.
+            summary = page.locator(".cmp-item-summary").first
+            if summary.count() == 0:
+                return None
+
             # Try offer price first, fall back to regular price
-            offer = page.locator(".price-value.offer")
+            offer = summary.locator(".price-value.offer")
             if offer.count() > 0:
-                price_text = offer.evaluate("(el) => el.childNodes[1].textContent")
+                price_text = offer.first.evaluate("(el) => el.childNodes[1].textContent")
             else:
-                price_text = page.locator(".price-value").first.inner_text(timeout=5000)
+                regular = summary.locator(".price-value")
+                if regular.count() == 0:
+                    return None
+                price_text = regular.first.inner_text(timeout=5000)
 
             return extract_price(price_text)
 

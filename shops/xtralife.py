@@ -15,7 +15,17 @@ def get_xtralife_price(url):
             except:
                 pass
 
-            elements = page.locator(".tw-font-xtralife-bold")
+            # Scope to the main product price component. `.tw-font-xtralife-bold`
+            # is a generic Tailwind class also used by shipping notices
+            # ("Recíbelo desde 2,99€") and recommendation cards, so searching the
+            # whole page could return an unrelated product's price when this one
+            # has none. The real price lives inside <product-pricing>.
+            pricing = page.locator("product-pricing").first
+
+            if pricing.count() == 0:
+                return None
+
+            elements = pricing.locator(".tw-font-xtralife-bold")
 
             count = elements.count()
 
@@ -28,6 +38,9 @@ def get_xtralife_price(url):
                 if "€" in text:
                     price_text = text
                     break
+
+            if price_text is None:
+                return None
 
             return extract_price(price_text)
 
