@@ -39,9 +39,9 @@ def get_available_shops():
     shops_dir = os.path.join(os.path.dirname(__file__), '..', 'shops')
     shops = []
 
-    # Fnac is excluded from the auto-resolver, but it should still be
-    # available for manual URL-only entry in the GUI.
-    EXCLUDED_SHOPS = ['playwright_utils.py', 'price_utils.py']
+    # Fnac scraping is still unreliable, so it's hidden from manual URL
+    # entry for now too (on top of being excluded from the auto-resolver).
+    EXCLUDED_SHOPS = ['playwright_utils.py', 'price_utils.py', 'fnac.py']
     for file in os.listdir(shops_dir):
         if file.endswith('.py') and not file.startswith('__') and file not in EXCLUDED_SHOPS:
             shop_name = file.replace('.py', '').capitalize()
@@ -359,8 +359,13 @@ class AddProductDialog(QDialog):
             print("Please select at least one platform.")
             return
 
-        if not selected_shops:
-            print("Please select at least one shop.")
+        if not selected_shops and not self.manual_shop_urls:
+            QMessageBox.warning(
+                self,
+                "No Shops Selected",
+                "Please select at least one shop from the dropdown, "
+                "or enter at least one manual URL."
+            )
             return
 
         product_id = create_product(
