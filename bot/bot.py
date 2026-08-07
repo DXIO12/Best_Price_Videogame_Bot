@@ -150,7 +150,7 @@ def send_notification(product_name: str, shop: str, current_price: float,
 # MAIN PRICE CHECKER
 # =========================================================
 
-def check_prices():
+def check_prices(stop_event=None):
     print("===================================")
     print("Checking product prices...")
 
@@ -165,6 +165,10 @@ def check_prices():
             return
 
         for product in products:
+            if stop_event is not None and stop_event.is_set():
+                print("Stop requested — halting price check.")
+                break
+
             name = product.name
             target_price = product.target_price
             shop_records = db.query(ProductShop).filter(
@@ -178,9 +182,9 @@ def check_prices():
             print(f"\nProduct: {name} | Target: {target_price}€")
 
             if settings["notify_only_best_price"]:
-                _check_best_price(db, name, target_price, shop_records, settings)
+                _check_best_price(db, name, target_price, shop_records, settings, stop_event)
             else:
-                _check_all_shops(db, name, target_price, shop_records, settings)
+                _check_all_shops(db, name, target_price, shop_records, settings, stop_event)
 
     finally:
         db.close()
@@ -195,11 +199,14 @@ def check_prices():
 # =========================================================
 
 def _check_best_price(db, product_name: str, target_price: float,
-                      shop_records: list, settings: dict):
+                      shop_records: list, settings: dict, stop_event=None):
     """Scrape all shops, then send one notification for the cheapest hit."""
     hits = []
 
     for record in shop_records:
+        if stop_event is not None and stop_event.is_set():
+            break
+
         price = _scrape(record)
         if price is not None:
             save_shop_record(db, record, price, notified=False)
@@ -228,9 +235,12 @@ def _check_best_price(db, product_name: str, target_price: float,
 # =========================================================
 
 def _check_all_shops(db, product_name: str, target_price: float,
-                     shop_records: list, settings: dict):
+                     shop_records: list, settings: dict, stop_event=None):
     """Scrape each shop and notify individually for every hit."""
     for record in shop_records:
+        if stop_event is not None and stop_event.is_set():
+            break
+
         price = _scrape(record)
 
         if price is None:

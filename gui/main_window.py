@@ -1,4 +1,6 @@
 import sys
+import threading
+from bot.bot import load_settings
 from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
@@ -35,6 +37,14 @@ class MainWindow(QWidget):
         self.resize(1000, 600)
 
         self.thread_pool = QThreadPool()
+
+        # Recurring bot state
+        self.bot_running = False
+        self.bot_worker_active = False
+        self.bot_stop_event = threading.Event()
+        self.bot_schedule_timer = QTimer()
+        self.bot_schedule_timer.setSingleShot(True)
+        self.bot_schedule_timer.timeout.connect(self._launch_bot_worker)
 
         self.setup_ui()
 
@@ -85,6 +95,12 @@ class MainWindow(QWidget):
         )
         self.start_bot_button.setMinimumWidth(180)
 
+        self.stop_bot_button = QPushButton(
+            "Stop Bot"
+        )
+        self.stop_bot_button.setMinimumWidth(180)
+        self.stop_bot_button.setEnabled(False)
+
         # CONNECT BUTTONS
         self.add_product_button.clicked.connect(
             self.open_add_product_dialog
@@ -98,6 +114,7 @@ class MainWindow(QWidget):
         self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
         self.settings_bot_button.clicked.connect(self.open_settings_bot_dialog)
         self.start_bot_button.clicked.connect(self.start_bot_worker)
+        self.stop_bot_button.clicked.connect(self.stop_bot_worker)
 
         button_layout.addWidget(
             self.add_product_button
@@ -156,6 +173,7 @@ class MainWindow(QWidget):
         start_button_layout = QHBoxLayout()
         start_button_layout.addStretch()
         start_button_layout.addWidget(self.start_bot_button)
+        start_button_layout.addWidget(self.stop_bot_button)
         start_button_layout.addStretch()
         main_layout.addLayout(start_button_layout)
 
@@ -433,24 +451,61 @@ class MainWindow(QWidget):
         self._launch_bot_worker()
 
     def _launch_bot_worker(self):
+        self.bot_running = True
+        self.bot_worker_active = True
+        self.bot_stop_event.clear()
         self.start_bot_button.setEnabled(False)
+        self.stop_bot_button.setEnabled(True)
         self.status_label.setText("Starting bot...")
 
-        worker = BotWorker()
+        worker = BotWorker(self.bot_stop_event)
         worker.signals.started.connect(lambda: self.status_label.setText("Bot is running..."))
         worker.signals.finished.connect(self.on_bot_finished)
         worker.signals.error.connect(self.on_bot_error)
 
         self.thread_pool.start(worker)
 
+    def _reschedule_or_stop(self, pass_status: str, stopped_status: str):
+        """Shared post-pass logic for on_bot_finished/on_bot_error.
+
+        If the user hasn't pressed Stop, schedule the next pass after the
+        configured interval. Otherwise finalise the "stopped" state."""
+        if self.bot_running and not self.bot_stop_event.is_set():
+            interval = load_settings()["check_interval_minutes"]
+            self.status_label.setText(f"{pass_status} Next check in {interval} min.")
+            self.bot_schedule_timer.start(interval * 60_000)
+        else:
+            self.bot_running = False
+            self.status_label.setText(stopped_status)
+            self.start_bot_button.setEnabled(True)
+            self.stop_bot_button.setEnabled(False)
+
     def on_bot_finished(self):
-        self.start_bot_button.setEnabled(True)
-        self.status_label.setText("Bot finished.")
+        self.bot_worker_active = False
         self.load_products()
+        self._reschedule_or_stop("Bot finished.", "Bot stopped.")
 
     def on_bot_error(self, message):
-        self.start_bot_button.setEnabled(True)
-        self.status_label.setText(f"Bot error: {message}")
+        self.bot_worker_active = False
+        self._reschedule_or_stop(f"Bot error: {message}", f"Bot error: {message}")
+
+    def stop_bot_worker(self):
+        self.bot_running = False
+        self.bot_schedule_timer.stop()
+        self.bot_stop_event.set()
+        self.stop_bot_button.setEnabled(False)
+
+        if self.bot_worker_active:
+            self.status_label.setText("Stopping bot (finishing current check)...")
+        else:
+            self.status_label.setText("Bot stopped.")
+            self.start_bot_button.setEnabled(True)
+
+    def closeEvent(self, event):
+        if self.bot_running:
+            self.stop_bot_worker()
+        self.retry_timer.stop()
+        super().closeEvent(event)
 
 app = QApplication(sys.argv)
 

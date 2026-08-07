@@ -1,3 +1,5 @@
+import threading
+
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 
 from bot.bot import check_prices
@@ -10,15 +12,16 @@ class BotWorkerSignals(QObject):
 
 
 class BotWorker(QRunnable):
-    def __init__(self):
+    def __init__(self, stop_event: threading.Event | None = None):
         super().__init__()
         self.signals = BotWorkerSignals()
+        self.stop_event = stop_event
 
     @pyqtSlot()
     def run(self):
         self.signals.started.emit()
         try:
-            check_prices()
+            check_prices(stop_event=self.stop_event)
         except Exception as error:
             self.signals.error.emit(str(error))
         finally:
