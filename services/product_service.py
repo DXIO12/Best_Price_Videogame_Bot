@@ -1,6 +1,6 @@
 from database.db import SessionLocal
 from sqlalchemy.orm import joinedload
-from database.models import (Product, ProductShop, Platform)
+from database.models import (Product, ProductShop, Platform, product_platforms)
 
 # Maps GUI display labels → DB-stored names (and reverse).
 # Update this dict whenever a platform is renamed in the DB.
@@ -113,6 +113,44 @@ def get_products_with_shops():
     return [(product, shops_by_product.get(product.id, []))
         for product in unique_products
     ]
+
+
+def get_platform_priorities() -> dict[tuple[int, int], int]:
+    """Return {(product_id, platform_id): priority} for every product+platform row."""
+
+    db = SessionLocal()
+    rows = db.execute(
+        product_platforms.select().with_only_columns(
+            product_platforms.c.product_id,
+            product_platforms.c.platform_id,
+            product_platforms.c.priority,
+        )
+    ).all()
+    db.close()
+
+    return {(row.product_id, row.platform_id): row.priority for row in rows}
+
+
+def reorder_platform_priorities(ordered_keys: list[tuple[int, int]]):
+    """Persist a new priority order for (product_id, platform_id) pairs.
+
+    ordered_keys is the desired top-to-bottom order; each pair gets its
+    index as the new priority value.
+    """
+
+    if not ordered_keys:
+        return
+
+    db = SessionLocal()
+    for priority, (product_id, platform_id) in enumerate(ordered_keys):
+        db.execute(
+            product_platforms.update()
+            .where(product_platforms.c.product_id == product_id)
+            .where(product_platforms.c.platform_id == platform_id)
+            .values(priority=priority)
+        )
+    db.commit()
+    db.close()
 
 
 def delete_products(product_ids):

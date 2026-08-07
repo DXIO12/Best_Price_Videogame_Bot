@@ -5,8 +5,13 @@ from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
 from gui.settings_bot import SettingsBotDialog
-from services.product_service import get_products_with_shops, to_gui_names
-from PyQt6.QtCore import QThreadPool, Qt, QTimer
+from services.product_service import (
+    get_products_with_shops,
+    to_gui_names,
+    get_platform_priorities,
+    reorder_platform_priorities,
+)
+from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal
 from database.db import SessionLocal
 from database.models import ProductShop, Setting
 from PyQt6.QtWidgets import (
@@ -19,12 +24,63 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
-    QMessageBox
+    QMessageBox,
+    QAbstractItemView,
+    QToolButton
 )
 
 from gui.bot_worker import BotWorker
 from services.resolver_worker import ResolverWorker, RetryWorker
 from services.resolve_urls_service import MAX_RETRIES
+
+
+class PriorityTableWidget(QTableWidget):
+    """QTableWidget whose drop handling is fully overridden.
+
+    Qt's built-in InternalMove drag-and-drop only relocates the
+    QTableWidgetItems, not cell widgets (we use a QLabel for the Shops
+    column), which desyncs rows after a drag. Instead we just figure out
+    source/target row and let the owner rebuild the whole table from the
+    database, which keeps items and cell widgets consistent.
+    """
+
+    rowDropped = pyqtSignal(int, int)  # source_row, target_row
+
+    def dropEvent(self, event):
+        source_row = self.currentRow()
+        pos = event.position().toPoint()
+        index = self.indexAt(pos)
+
+        # Threshold is 15% of the row's height into the hovered row.
+        # Dragging downward: crossing just the top 15% of a lower row is
+        # enough to register "insert below it". Dragging upward: crossing
+        # just the bottom 15% of a higher row is enough for "insert above
+        # it". This needs noticeably less mouse travel than a full half-row
+        # crossing, so a one-row move triggers sooner and feels snappier.
+        if index.isValid():
+            row_rect = self.visualRect(index)
+            hovered_row = index.row()
+            if hovered_row > source_row:
+                threshold_y = row_rect.top() + row_rect.height() * 0.15
+            elif hovered_row < source_row:
+                threshold_y = row_rect.top() + row_rect.height() * 0.85
+            else:
+                threshold_y = row_rect.center().y()
+            target_row = hovered_row if pos.y() < threshold_y else hovered_row + 1
+        else:
+            target_row = self.rowCount()
+
+        # Tell Qt the drop was a no-op (IgnoreAction) rather than a Move.
+        # If we let it resolve as a Move, QAbstractItemView's own internals
+        # delete the dragged row *after* this method returns — on top of
+        # whatever we already did — which silently drops a row from the
+        # table. We handle the reorder entirely ourselves, so Qt must not
+        # touch the model at all.
+        event.setDropAction(Qt.DropAction.IgnoreAction)
+        event.accept()
+
+        if source_row != -1 and target_row != source_row and target_row != source_row + 1:
+            self.rowDropped.emit(source_row, target_row)
 
 
 class MainWindow(QWidget):
@@ -131,12 +187,16 @@ class MainWindow(QWidget):
         main_layout.addLayout(button_layout)
 
         # PRODUCT TABLE
-        self.product_table = QTableWidget()
+        self.product_table = PriorityTableWidget()
 
         self.product_table.setWordWrap(True)
-        self.product_table.setColumnCount(5) 
+        self.product_table.setColumnCount(6)
+        # We render our own "#" priority column — Qt's default row-number
+        # header would otherwise show a second, redundant number.
+        self.product_table.verticalHeader().setVisible(False)
 
         self.product_table.setHorizontalHeaderLabels([
+            "Priority",
             "Product",
             "Platform",
             "Target Price",
@@ -144,19 +204,38 @@ class MainWindow(QWidget):
             "Best Price"
         ])
 
-        self.product_table.horizontalHeaderItem(3).setToolTip(
+        self.product_table.horizontalHeaderItem(4).setToolTip(
             "Shop status icons:\n"
             "✖  no URL yet\n"
             "⏳  URL failed — retry scheduled\n"
             "⚠  URL failed — retries exhausted\n"
             "⚠ (yellow)  no price found (product unavailable)"
         )
+        self.product_table.horizontalHeaderItem(0).setToolTip(
+            "Search priority. Drag rows to reorder — the bot searches\n"
+            "lower-numbered rows first."
+        )
 
-        self.product_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.product_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.product_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.product_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # ← new
+        self.product_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+
+        # Drag-and-drop row reordering (Amazon-list style) — each row is one
+        # product+platform combination with its own independent priority.
+        self.product_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.product_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.product_table.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.product_table.setDragDropOverwriteMode(False)
+        self.product_table.setDragEnabled(True)
+        self.product_table.setSortingEnabled(False)
+        self.product_table.rowDropped.connect(self.on_row_dropped)
+        # Grey instead of the default blue for the row being dragged/selected.
+        self.product_table.setStyleSheet(
+            "QTableWidget::item:selected { background-color: #6e6e6e; color: white; }"
+        )
 
 
         main_layout.addWidget(self.product_table)
@@ -267,47 +346,111 @@ class MainWindow(QWidget):
             parts.append(label)
         return ", ".join(parts) if parts else "None"
 
+    def _set_rank_cell_widget(self, row: int, key: tuple, is_first: bool, is_last: bool):
+        """Rank number plus small ▲▼ nudge buttons — moving a row by exactly
+        one position via drag-and-drop is fiddly, so this gives a precise
+        one-step alternative. The rank QTableWidgetItem underneath still
+        holds the (product_id, platform_id) key used by drag reordering."""
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(4, 0, 2, 0)
+        layout.setSpacing(2)
+
+        rank_label = QLabel(str(row + 1))
+        layout.addWidget(rank_label)
+
+        up_button = QToolButton()
+        up_button.setText("▲")
+        up_button.setAutoRaise(True)
+        up_button.setFixedSize(16, 16)
+        up_button.setEnabled(not is_first and key[1] is not None)
+        up_button.clicked.connect(lambda _checked, k=key: self.move_priority(k, -1))
+
+        down_button = QToolButton()
+        down_button.setText("▼")
+        down_button.setAutoRaise(True)
+        down_button.setFixedSize(16, 16)
+        down_button.setEnabled(not is_last and key[1] is not None)
+        down_button.clicked.connect(lambda _checked, k=key: self.move_priority(k, 1))
+
+        layout.addWidget(up_button)
+        layout.addWidget(down_button)
+        self.product_table.setCellWidget(row, 0, container)
+
+    def move_priority(self, key: tuple, direction: int):
+        """Move a single (product_id, platform_id) row's priority up (-1) or
+        down (+1) by exactly one position."""
+        priorities = get_platform_priorities()
+        ordered_keys = sorted(priorities, key=lambda k: priorities[k])
+        if key not in ordered_keys:
+            return
+
+        index = ordered_keys.index(key)
+        new_index = index + direction
+        if new_index < 0 or new_index >= len(ordered_keys):
+            return
+
+        ordered_keys[index], ordered_keys[new_index] = ordered_keys[new_index], ordered_keys[index]
+        reorder_platform_priorities(ordered_keys)
+        self.load_products()
+
     def _set_shops_cell(self, row: int, shop_records, all_shops):
         """Render the Shops cell as a rich-text QLabel so the yellow ⚠ marker
         can be coloured independently of the rest of the cell text."""
         html = self._build_shops_html(shop_records, all_shops)
-        widget = self.product_table.cellWidget(row, 3)
+        widget = self.product_table.cellWidget(row, 4)
         if isinstance(widget, QLabel):
             widget.setText(html)
             return
         label = QLabel(html)
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setContentsMargins(4, 0, 4, 0)
-        self.product_table.setCellWidget(row, 3, label)
+        self.product_table.setCellWidget(row, 4, label)
 
     def load_products(self):
 
         products_with_shops = get_products_with_shops()
         all_shops = get_available_shops()
+        priorities = get_platform_priorities()
 
-        # Build display rows
+        # Build display rows — one per product+platform combination, each
+        # carrying its own (product_id, platform_id) priority key so rows
+        # for the same product can be reordered independently of each other.
         display_rows = []
         for product, shop_records in products_with_shops:
             if product.platforms:
                 plats = to_gui_names([p.name for p in product.platforms])
+                for platform, plat_display in zip(product.platforms, plats):
+                    key = (product.id, platform.id)
+                    priority = priorities.get(key, 0)
+                    display_rows.append((priority, key, product, plat_display, shop_records))
             else:
-                plats = ['']
-            for plat in plats:
-                display_rows.append((product, plat, shop_records))
+                # No platform assigned: nothing to key priority against in
+                # product_platforms, so this row can't be drag-reordered.
+                key = (product.id, None)
+                display_rows.append((0, key, product, '', shop_records))
+
+        display_rows.sort(key=lambda entry: entry[0])
 
         self.product_table.setRowCount(0)
         self.product_table.setRowCount(len(display_rows))
 
         # Fetch best prices from DB
         db = SessionLocal()
-        
-        for row, (product, platform_value, shop_records) in enumerate(display_rows):
+
+        for row, (priority, key, product, platform_value, shop_records) in enumerate(display_rows):
+
+            rank_item = QTableWidgetItem(str(row + 1))
+            rank_item.setData(Qt.ItemDataRole.UserRole, key)
+            rank_item.setFlags(rank_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.product_table.setItem(row, 0, rank_item)
+            self._set_rank_cell_widget(row, key, is_first=(row == 0), is_last=(row == len(display_rows) - 1))
 
             name_item = QTableWidgetItem(product.name)
             name_item.setData(Qt.ItemDataRole.UserRole, product.id)
-            self.product_table.setItem(row, 0, name_item)
-            self.product_table.setItem(row, 1, QTableWidgetItem(platform_value))
-            self.product_table.setItem(row, 2, QTableWidgetItem(f"{product.target_price} €"))
+            self.product_table.setItem(row, 1, name_item)
+            self.product_table.setItem(row, 2, QTableWidgetItem(platform_value))
+            self.product_table.setItem(row, 3, QTableWidgetItem(f"{product.target_price} €"))
 
             self._set_shops_cell(row, shop_records, all_shops)
 
@@ -326,12 +469,48 @@ class MainWindow(QWidget):
             else:
                 best_price_text = "—"
 
-            self.product_table.setItem(row, 4, QTableWidgetItem(best_price_text))
+            self.product_table.setItem(row, 5, QTableWidgetItem(best_price_text))
 
         db.close()
         ROW_HEIGHT = 36
         for row in range(self.product_table.rowCount()):
             self.product_table.setRowHeight(row, ROW_HEIGHT)
+
+    # =========================================
+    # DRAG-AND-DROP PRIORITY REORDERING
+    # =========================================
+
+    def on_row_dropped(self, source_row: int, target_row: int):
+        """A row was dragged from source_row to target_row. Recompute the
+        (product_id, platform_id) order and persist it, then fully rebuild
+        the table from the database so items and cell widgets stay in sync."""
+        keys = [
+            self.product_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            for row in range(self.product_table.rowCount())
+        ]
+
+        if source_row < 0 or source_row >= len(keys):
+            return
+
+        moving_key = keys.pop(source_row)
+        insert_at = target_row - 1 if target_row > source_row else target_row
+        insert_at = max(0, min(insert_at, len(keys)))
+        keys.insert(insert_at, moving_key)
+
+        ordered_keys = [key for key in keys if key is not None and key[1] is not None]
+        if ordered_keys:
+            reorder_platform_priorities(ordered_keys)
+
+        # We're still inside Qt's drag-and-drop event loop here (dropEvent
+        # hasn't returned to startDrag() yet). Rebuilding the table now would
+        # race with Qt's own internal drag cleanup, so defer it to the next
+        # event loop iteration, once the drag has fully finished.
+        QTimer.singleShot(0, self._finish_row_drop)
+
+    def _finish_row_drop(self):
+        self.load_products()
+        self.product_table.clearSelection()
+        self.product_table.setCurrentCell(-1, -1)
 
     # =========================================
     # UPDATE URLs BUTTON (main window)
@@ -341,7 +520,7 @@ class MainWindow(QWidget):
         """Resolve missing URLs for all products currently shown in the table."""
         product_ids = set()
         for row in range(self.product_table.rowCount()):
-            item = self.product_table.item(row, 0)
+            item = self.product_table.item(row, 1)
             if item:
                 pid = item.data(Qt.ItemDataRole.UserRole)
                 if pid is not None:
@@ -394,7 +573,7 @@ class MainWindow(QWidget):
         all_shops = get_available_shops()
 
         for row in range(self.product_table.rowCount()):
-            item = self.product_table.item(row, 0)
+            item = self.product_table.item(row, 1)
             if item and item.data(Qt.ItemDataRole.UserRole) == product_id:
                 self._set_shops_cell(row, shop_records, all_shops)
 

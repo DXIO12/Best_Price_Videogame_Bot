@@ -26,6 +26,16 @@ product_platforms = Table(
         "platform_id",
         Integer,
         ForeignKey("platforms.id")
+    ),
+
+    # Search priority for this specific product+platform combination.
+    # Lower value = searched first. Independent per platform so the same
+    # product can be prioritised differently across its platforms.
+    Column(
+        "priority",
+        Integer,
+        nullable=False,
+        default=0
     )
 )
 

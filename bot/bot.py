@@ -16,8 +16,10 @@ from shops.corteingles import get_elcorteingles_price
 from shops.carrefour import get_carrefour_price
 from shops.playwright_utils import stop_browser
 
+from sqlalchemy import func
+
 from database.db import SessionLocal
-from database.models import Product, ProductShop, Setting
+from database.models import Product, ProductShop, Setting, product_platforms
 
 
 # =========================================================
@@ -158,7 +160,16 @@ def check_prices(stop_event=None):
     db = SessionLocal()
 
     try:
-        products = db.query(Product).all()
+        # Products are searched in ascending priority order — a product's
+        # priority is the best (lowest) priority among its platform rows,
+        # since the same product can rank differently per platform in the UI.
+        products = (
+            db.query(Product)
+            .outerjoin(product_platforms, product_platforms.c.product_id == Product.id)
+            .group_by(Product.id)
+            .order_by(func.coalesce(func.min(product_platforms.c.priority), 0))
+            .all()
+        )
 
         if not products:
             print("No products in database.")
