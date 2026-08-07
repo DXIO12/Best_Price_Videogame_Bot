@@ -10,6 +10,8 @@ from services.product_service import (
     to_gui_names,
     get_platform_priorities,
     reorder_platform_priorities,
+    delete_product_platforms,
+    delete_products,
 )
 from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal
 from database.db import SessionLocal
@@ -90,7 +92,8 @@ class MainWindow(QWidget):
 
         self.setWindowTitle("Price Bot")
 
-        self.resize(1000, 600)
+        self.resize(1080, 600)
+        self._center_on_screen()
 
         self.thread_pool = QThreadPool()
 
@@ -110,6 +113,20 @@ class MainWindow(QWidget):
         self.retry_timer = QTimer()
         self.retry_timer.timeout.connect(self.check_retry_queue)
         self.retry_timer.start(5 * 60 * 1000)
+
+    def _center_on_screen(self):
+        """Centre the window on the largest connected screen — Qt otherwise
+        places new top-level windows at (0, 0) on the primary screen, which
+        may not be the biggest one in a multi-monitor setup."""
+        screens = QApplication.screens()
+        largest_screen = max(
+            screens,
+            key=lambda screen: screen.geometry().width() * screen.geometry().height()
+        )
+        screen_geometry = largest_screen.availableGeometry()
+        frame_geometry = self.frameGeometry()
+        frame_geometry.moveCenter(screen_geometry.center())
+        self.move(frame_geometry.topLeft())
 
     def setup_ui(self):
 
@@ -190,7 +207,7 @@ class MainWindow(QWidget):
         self.product_table = PriorityTableWidget()
 
         self.product_table.setWordWrap(True)
-        self.product_table.setColumnCount(6)
+        self.product_table.setColumnCount(7)
         # We render our own "#" priority column — Qt's default row-number
         # header would otherwise show a second, redundant number.
         self.product_table.verticalHeader().setVisible(False)
@@ -201,7 +218,8 @@ class MainWindow(QWidget):
             "Platform",
             "Target Price",
             "Shops",
-            "Best Price"
+            "Best Price",
+            ""
         ])
 
         self.product_table.horizontalHeaderItem(4).setToolTip(
@@ -222,6 +240,8 @@ class MainWindow(QWidget):
         self.product_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.horizontalHeaderItem(6).setToolTip("Delete this product")
 
         # Drag-and-drop row reordering (Amazon-list style) — each row is one
         # product+platform combination with its own independent priority.
@@ -394,6 +414,54 @@ class MainWindow(QWidget):
         reorder_platform_priorities(ordered_keys)
         self.load_products()
 
+    def _set_delete_cell_widget(self, row: int, product_id: int, product_name: str, platform_name):
+        """Small red trash-icon button for quick, per-row deletion — an
+        alternative to the "Delete Product" dialog for the common case of
+        removing a single product/platform."""
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.addStretch()
+
+        delete_button = QToolButton()
+        delete_button.setText("🗑")
+        delete_button.setAutoRaise(True)
+        delete_button.setToolTip("Delete this product")
+        delete_button.setStyleSheet("QToolButton { color: #cc3333; font-size: 14px; }")
+        delete_button.clicked.connect(
+            lambda _checked, pid=product_id, name=product_name, plat=platform_name:
+                self.delete_row_clicked(pid, name, plat)
+        )
+
+        layout.addWidget(delete_button)
+        layout.addStretch()
+        self.product_table.setCellWidget(row, 6, container)
+
+    def delete_row_clicked(self, product_id: int, product_name: str, platform_name):
+        """Handler for the per-row quick-delete button: confirm, then remove
+        just this product/platform (or the whole product if it has none)."""
+        label = f"{product_name} ({platform_name})" if platform_name else product_name
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f'Are you sure you want to delete "{label}"?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        if platform_name:
+            delete_product_platforms(product_id, [platform_name])
+        else:
+            delete_products([product_id])
+
+        print(f"===================================")
+        print(f"[Delete] '{label}' removed via quick delete.")
+
+        self.load_products()
+
     def _set_shops_cell(self, row: int, shop_records, all_shops):
         """Render the Shops cell as a rich-text QLabel so the yellow ⚠ marker
         can be coloured independently of the rest of the cell text."""
@@ -423,12 +491,12 @@ class MainWindow(QWidget):
                 for platform, plat_display in zip(product.platforms, plats):
                     key = (product.id, platform.id)
                     priority = priorities.get(key, 0)
-                    display_rows.append((priority, key, product, plat_display, shop_records))
+                    display_rows.append((priority, key, product, plat_display, shop_records, platform.name))
             else:
                 # No platform assigned: nothing to key priority against in
                 # product_platforms, so this row can't be drag-reordered.
                 key = (product.id, None)
-                display_rows.append((0, key, product, '', shop_records))
+                display_rows.append((0, key, product, '', shop_records, None))
 
         display_rows.sort(key=lambda entry: entry[0])
 
@@ -438,7 +506,7 @@ class MainWindow(QWidget):
         # Fetch best prices from DB
         db = SessionLocal()
 
-        for row, (priority, key, product, platform_value, shop_records) in enumerate(display_rows):
+        for row, (priority, key, product, platform_value, shop_records, platform_raw_name) in enumerate(display_rows):
 
             rank_item = QTableWidgetItem(str(row + 1))
             rank_item.setData(Qt.ItemDataRole.UserRole, key)
@@ -453,6 +521,7 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 3, QTableWidgetItem(f"{product.target_price} €"))
 
             self._set_shops_cell(row, shop_records, all_shops)
+            self._set_delete_cell_widget(row, product.id, product.name, platform_raw_name)
 
             # Best price column — lowest price among shops that currently have
             # one. Unavailable shops are excluded so a stale price is never shown;
