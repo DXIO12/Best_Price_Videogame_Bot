@@ -35,11 +35,13 @@ def get_available_shops_urlsearcher():
     return shops
 
 def get_available_shops():
-    """Dynamically get shop names from the shops folder"""
+    """Dynamically get shop names from the shops folder for manual URL entry."""
     shops_dir = os.path.join(os.path.dirname(__file__), '..', 'shops')
     shops = []
 
-    EXCLUDED_SHOPS = ['playwright_utils.py', 'price_utils.py', 'fnac.py']  
+    # Fnac is excluded from the auto-resolver, but it should still be
+    # available for manual URL-only entry in the GUI.
+    EXCLUDED_SHOPS = ['playwright_utils.py', 'price_utils.py']
     for file in os.listdir(shops_dir):
         if file.endswith('.py') and not file.startswith('__') and file not in EXCLUDED_SHOPS:
             shop_name = file.replace('.py', '').capitalize()
@@ -185,7 +187,7 @@ class ManualUrlDialog(QDialog):
         layout = QVBoxLayout()
 
         info_label = QLabel(
-            "Enter the product URL for each shop (leave blank to auto-resolve):"
+            "Enter the product URL for each shop (leave blank to auto-resolve)."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
