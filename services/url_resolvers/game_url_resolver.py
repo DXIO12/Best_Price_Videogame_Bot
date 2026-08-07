@@ -7,11 +7,17 @@ from urllib.parse import unquote_plus
 BASE_URL = "https://www.game.es"
 
 USED_KEYWORDS = {"segunda mano", "seminuevo", "usado", "reacondicionado", "segunda-mano"}
+DIGITAL_KEYWORDS = {"prepago", "prepagos", "digital", "descarga"}
 
 
 def _is_used(title: str) -> bool:
     t = title.lower()
     return any(kw in t for kw in USED_KEYWORDS)
+
+
+def _is_digital(title: str) -> bool:
+    t = title.lower()
+    return any(kw in t for kw in DIGITAL_KEYWORDS)
 
 
 def _read_game_price(page) -> float | None:
@@ -98,7 +104,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
                 if first_href is None:
                     first_href = href
 
-                if _is_used(title):
+                if _is_used(title) or _is_digital(title):
                     continue
 
                 title_words = set(re.sub(r"[^a-z0-9\s]", "", title.lower()).split())
