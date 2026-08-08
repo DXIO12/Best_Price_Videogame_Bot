@@ -14,6 +14,7 @@ from services.product_service import (
     delete_products,
 )
 from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QCursor
 from database.db import SessionLocal
 from database.models import ProductShop, Setting
 from PyQt6.QtWidgets import (
@@ -28,7 +29,8 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QMessageBox,
     QAbstractItemView,
-    QToolButton
+    QToolButton,
+    QToolTip
 )
 
 from gui.bot_worker import BotWorker
@@ -113,6 +115,13 @@ class MainWindow(QWidget):
         self.retry_timer = QTimer()
         self.retry_timer.timeout.connect(self.check_retry_queue)
         self.retry_timer.start(5 * 60 * 1000)
+
+        # Re-issues the unavailable-store tooltip on an interval so it stays
+        # visible for as long as the cursor rests on the ⚠ marker, instead of
+        # vanishing after QToolTip's own short default display duration.
+        self._shop_tooltip_target = None
+        self._shop_tooltip_timer = QTimer(self)
+        self._shop_tooltip_timer.timeout.connect(self._refresh_shop_tooltip)
 
     def _center_on_screen(self):
         """Centre the window on the largest connected screen — Qt otherwise
@@ -223,11 +232,11 @@ class MainWindow(QWidget):
         ])
 
         self.product_table.horizontalHeaderItem(4).setToolTip(
-            "Shop status icons:\n"
+            "Shop status icons (hover one for details):\n"
             "✖  no URL yet\n"
             "⏳  URL failed — retry scheduled\n"
-            "⚠  URL failed — retries exhausted\n"
-            "⚠ (yellow)  no price found (product unavailable)"
+            "⚠ (red)  URL failed — retries exhausted\n"
+            "❗ (yellow)  no price found (product unavailable)"
         )
         self.product_table.horizontalHeaderItem(0).setToolTip(
             "Search priority. Drag rows to reorder — the bot searches\n"
@@ -321,8 +330,27 @@ class MainWindow(QWidget):
     # LOAD PRODUCTS IN THE TABLE
     # =========================================
 
-    # Yellow warning marker for a shop that resolved a URL but has no price.
-    UNAVAILABLE_MARKER = ' <span style="color:#e6b800;">⚠</span>'
+    # Per-shop status markers, rendered as links (not <span title="">) because
+    # QLabel's rich text engine does not turn the HTML "title" attribute into
+    # a hover tooltip — only anchors emit linkHovered, which
+    # _on_shop_link_hovered listens to in order to show the right text below.
+    SHOP_MARKER_TOOLTIPS = {
+        "no_url": "No URL assigned yet — waiting for the first search attempt",
+        "retry_scheduled": "URL lookup failed — a retry is scheduled",
+        "retry_exhausted": "URL lookup failed after all retries — set the URL manually",
+        "unavailable": "The store does not have the selected product available",
+    }
+    NO_URL_MARKER = ' <a href="no_url" style="text-decoration:none;">✖</a>'
+    RETRY_SCHEDULED_MARKER = ' <a href="retry_scheduled" style="text-decoration:none;">⏳</a>'
+    RETRY_EXHAUSTED_MARKER = (
+        ' <a href="retry_exhausted" style="color:#cc3333; text-decoration:none;">⚠</a>'
+    )
+    # Plain "!" rather than the ❗ emoji codepoint: that symbol defaults to
+    # colour-emoji presentation on this system's font, which ignores the
+    # CSS `color` below and always renders red/orange regardless of style.
+    UNAVAILABLE_MARKER = (
+        ' <a href="unavailable" style="color:#e6b800; text-decoration:none;">!</a>'
+    )
 
     @staticmethod
     def _build_shops_html(shop_records, all_shops) -> str:
@@ -331,8 +359,8 @@ class MainWindow(QWidget):
         Per-shop markers:
           ✖  no URL yet (first attempt not done)
           ⏳  URL failed, retry scheduled
-          ⚠  URL failed, all retries exhausted
-          ⚠ (yellow)  URL resolved but the last check found no price (unavailable)
+          ⚠ (red)  URL failed, all retries exhausted
+          ❗ (yellow)  URL resolved but the last check found no price (unavailable)
         Collapses to "ALL" only when every shop has a URL and none are unavailable.
         """
         from html import escape
@@ -356,13 +384,15 @@ class MainWindow(QWidget):
             if not record.url:
                 retry = record.retry_count or 0
                 if retry > MAX_RETRIES:
-                    label += " ⚠"       # all retries exhausted
+                    label += MainWindow.RETRY_EXHAUSTED_MARKER   # red ⚠
                 elif retry > 0:
-                    label += " ⏳"      # failed but retry scheduled
+                    label += MainWindow.RETRY_SCHEDULED_MARKER   # ⏳
                 else:
-                    label += " ✖"       # first attempt not yet done
+                    label += MainWindow.NO_URL_MARKER            # ✖
             elif record.available is False:
-                label += MainWindow.UNAVAILABLE_MARKER  # yellow ⚠ — no price found
+                # Prepended (not appended like the other markers) so the
+                # unavailable warning catches the eye before the shop name.
+                label = f"{MainWindow.UNAVAILABLE_MARKER.strip()} {label}"
             parts.append(label)
         return ", ".join(parts) if parts else "None"
 
@@ -473,7 +503,30 @@ class MainWindow(QWidget):
         label = QLabel(html)
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setContentsMargins(4, 0, 4, 0)
+        label.setOpenExternalLinks(False)
+        label.linkHovered.connect(self._on_shop_link_hovered)
         self.product_table.setCellWidget(row, 4, label)
+
+    def _on_shop_link_hovered(self, url: str):
+        """Keep a shop status marker's tooltip visible while hovering it."""
+        text = self.SHOP_MARKER_TOOLTIPS.get(url)
+        if text:
+            label = self.sender()
+            rect = label.rect()
+            rect.moveTopLeft(label.mapToGlobal(rect.topLeft()))
+            self._shop_tooltip_target = (label, rect, text)
+            self._refresh_shop_tooltip()
+            self._shop_tooltip_timer.start(400)
+        else:
+            self._shop_tooltip_timer.stop()
+            self._shop_tooltip_target = None
+            QToolTip.hideText()
+
+    def _refresh_shop_tooltip(self):
+        if self._shop_tooltip_target is None:
+            return
+        label, rect, text = self._shop_tooltip_target
+        QToolTip.showText(QCursor.pos(), text, label, rect)
 
     def load_products(self):
 
