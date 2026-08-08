@@ -32,6 +32,7 @@ class ModifyProductDialog(QDialog):
         self.resize(950, 520)
 
         self._pending_shop_changes: dict[int, dict] = {}
+        self._loading = False
         self.setup_ui()
         self.load_products()
 
@@ -65,6 +66,8 @@ class ModifyProductDialog(QDialog):
         self.product_table.horizontalHeader().setSectionResizeMode(
             3, QHeaderView.ResizeMode.Stretch
         )
+
+        self.product_table.itemChanged.connect(self._on_item_changed)
 
         layout.addWidget(self.product_table)
 
@@ -123,6 +126,7 @@ class ModifyProductDialog(QDialog):
             for plat in plats:
                 display_rows.append((product.id, product.name, plat, product.target_price))
 
+        self._loading = True
         self.product_table.setRowCount(0)
         self.product_table.setRowCount(len(display_rows))
         self.platform_widgets = {}
@@ -156,6 +160,7 @@ class ModifyProductDialog(QDialog):
             )
             self.product_table.setCellWidget(row, 2, platform_dropdown)
             self.platform_widgets[row] = platform_dropdown
+            platform_dropdown.shops_changed.connect(lambda _sel, r=row: self._auto_check_row(r))
 
             # Col 3 — Shops button
             records = shops_by_pid.get(pid, [])
@@ -174,6 +179,22 @@ class ModifyProductDialog(QDialog):
             # Col 4 — Target Price (editable)
             price_item = QTableWidgetItem(f"{price} €")
             self.product_table.setItem(row, 4, price_item)
+
+        self._loading = False
+
+    def _on_item_changed(self, item):
+        """Auto-check a row's 'Modify' box when its name or price cell is edited."""
+        if item.column() in (1, 4):
+            self._auto_check_row(item.row())
+
+    def _auto_check_row(self, row):
+        """Mark a row's 'Modify' checkbox as checked, ignored while the table is loading."""
+        if self._loading:
+            return
+        checkbox_widget = self.product_table.cellWidget(row, 0)
+        checkbox = checkbox_widget.findChild(QCheckBox) if checkbox_widget else None
+        if checkbox is not None:
+            checkbox.setChecked(True)
 
     def on_apply_changes(self):
         """Collect selected products with edited values and apply changes."""
@@ -340,6 +361,7 @@ class ModifyProductDialog(QDialog):
             checkbox_widget = self.product_table.cellWidget(row, 0)
             checkbox = checkbox_widget.findChild(QCheckBox) if checkbox_widget else None
             if checkbox and checkbox.property("product_id") == product_id:
+                self._auto_check_row(row)
                 btn = self.product_table.cellWidget(row, 3)
                 if btn and isinstance(btn, QPushButton):
                     text = btn.text()
