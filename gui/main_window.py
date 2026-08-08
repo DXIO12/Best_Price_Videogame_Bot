@@ -191,7 +191,7 @@ class MainWindow(QWidget):
             self.open_delete_product_dialog
         )
         self.modify_product_button.clicked.connect(
-            self.open_modify_product_dialog
+            lambda: self.open_modify_product_dialog()
         )
         self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
         self.settings_bot_button.clicked.connect(self.open_settings_bot_dialog)
@@ -260,7 +260,13 @@ class MainWindow(QWidget):
         self.product_table.setDragDropOverwriteMode(False)
         self.product_table.setDragEnabled(True)
         self.product_table.setSortingEnabled(False)
+        # Product cells are read-only: edits happen only through the Modify
+        # Product dialog (button or double-click), never inline. This does not
+        # affect row selection or InternalMove drag-and-drop.
+        self.product_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.product_table.rowDropped.connect(self.on_row_dropped)
+        # Double-click a row to modify that product.
+        self.product_table.cellDoubleClicked.connect(self.on_row_double_clicked)
         # Grey instead of the default blue for the row being dragged/selected.
         self.product_table.setStyleSheet(
             "QTableWidget::item:selected { background-color: #6e6e6e; color: white; }"
@@ -318,13 +324,25 @@ class MainWindow(QWidget):
     # OPEN MODIFY PRODUCT DIALOG
     # =========================================
 
-    def open_modify_product_dialog(self):
+    def open_modify_product_dialog(self, preselect_product_id=None):
 
-        dialog = ModifyProductDialog()
-        
+        dialog = ModifyProductDialog(preselect_product_id=preselect_product_id)
+
         # Refresh table when product is modified
         dialog.product_modified.connect(self.load_products)
         dialog.exec()
+
+    # =========================================
+    # DOUBLE-CLICK A ROW -> MODIFY THAT PRODUCT
+    # =========================================
+
+    def on_row_double_clicked(self, row, column):
+        # The product id is stored on the name cell (column 1) in load_products.
+        name_item = self.product_table.item(row, 1)
+        if name_item is None:
+            return
+        product_id = name_item.data(Qt.ItemDataRole.UserRole)
+        self.open_modify_product_dialog(preselect_product_id=product_id)
 
     # =========================================
     # LOAD PRODUCTS IN THE TABLE

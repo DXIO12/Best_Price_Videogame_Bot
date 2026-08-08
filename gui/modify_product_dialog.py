@@ -24,17 +24,19 @@ class ModifyProductDialog(QDialog):
 
     product_modified = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, preselect_product_id: int | None = None):
         super().__init__()
 
         self.setWindowTitle("Modify Product")
 
         self.resize(950, 520)
 
+        self._preselect_product_id = preselect_product_id
         self._pending_shop_changes: dict[int, dict] = {}
         self._loading = False
         self.setup_ui()
         self.load_products()
+        self._preselect_product()
 
     def setup_ui(self):
 
@@ -181,6 +183,18 @@ class ModifyProductDialog(QDialog):
             self.product_table.setItem(row, 4, price_item)
 
         self._loading = False
+
+    def _preselect_product(self):
+        """Tick the Modify checkbox for the product the user double-clicked in
+        the main window (all of its platform rows). No-op when the dialog is
+        opened from the button, where no product is preselected."""
+        if self._preselect_product_id is None:
+            return
+        for row in range(self.product_table.rowCount()):
+            widget = self.product_table.cellWidget(row, 0)
+            checkbox = widget.findChild(QCheckBox) if widget else None
+            if checkbox and checkbox.property("product_id") == self._preselect_product_id:
+                checkbox.setChecked(True)
 
     def _on_item_changed(self, item):
         """Auto-check a row's 'Modify' box when its name or price cell is edited."""
