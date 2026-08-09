@@ -199,16 +199,18 @@ class MainWindow(QWidget):
         self.start_bot_button.clicked.connect(self.start_bot_worker)
         self.stop_bot_button.clicked.connect(self.stop_bot_worker)
 
+        # Order: Add · Modify · Delete — "Delete" sits at the far right, away
+        # from the others, to reduce the chance of an accidental deletion.
         button_layout.addWidget(
             self.add_product_button
         )
 
         button_layout.addWidget(
-            self.delete_product_button
+            self.modify_product_button
         )
 
         button_layout.addWidget(
-            self.modify_product_button
+            self.delete_product_button
         )
 
         main_layout.addLayout(button_layout)

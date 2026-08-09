@@ -44,5 +44,5 @@
     }
   ],
   "repeat_notification_minutes": 60,
-  "debug_mode": false
+  "debug_mode": true
 }
