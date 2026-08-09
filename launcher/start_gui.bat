@@ -5,7 +5,7 @@ call venv\Scripts\activate.bat
 if exist .env (
     icacls .env /inheritance:r /grant:r "%USERNAME%:(R)" >nul 2>&1
 )
-set PRICE_BOT_HEADLESS=1
+REM No forced headless: the GUI honours the debug_mode setting (Settings menu).
 python -m database.init_db
 python -m gui.main_window
 pause

@@ -4,6 +4,6 @@ set -e
 cd "$(dirname "$0")/.."
 source venv/bin/activate
 [ -f .env ] && chmod 600 .env
-export PRICE_BOT_HEADLESS=1
+# No forced headless: the GUI honours the debug_mode setting (Settings menu).
 python -m database.init_db
 python -m gui.main_window

@@ -24,6 +24,7 @@ pyinstaller \
     --add-data "services:services" \
     --add-data "gui:gui" \
     --add-data "bot:bot" \
+    --add-data "config:config" \
     --hidden-import "PyQt6.sip" \
     --hidden-import "playwright.sync_api" \
     gui/main_window.py
