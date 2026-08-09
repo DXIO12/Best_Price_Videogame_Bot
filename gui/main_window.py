@@ -219,7 +219,7 @@ class MainWindow(QWidget):
         self.product_table = PriorityTableWidget()
 
         self.product_table.setWordWrap(True)
-        self.product_table.setColumnCount(7)
+        self.product_table.setColumnCount(8)
         # We render our own "#" priority column — Qt's default row-number
         # header would otherwise show a second, redundant number.
         self.product_table.verticalHeader().setVisible(False)
@@ -231,6 +231,7 @@ class MainWindow(QWidget):
             "Target Price",
             "Shops",
             "Best Price",
+            "",
             ""
         ])
 
@@ -253,7 +254,9 @@ class MainWindow(QWidget):
         self.product_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        self.product_table.horizontalHeaderItem(6).setToolTip("Delete this product")
+        self.product_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.horizontalHeaderItem(6).setToolTip("Edit this product")
+        self.product_table.horizontalHeaderItem(7).setToolTip("Delete this product")
 
         # Drag-and-drop row reordering (Amazon-list style) — each row is one
         # product+platform combination with its own independent priority.
@@ -465,6 +468,31 @@ class MainWindow(QWidget):
         reorder_platform_priorities(ordered_keys)
         self.load_products()
 
+    def _set_edit_cell_widget(self, row: int, product_id: int):
+        """Small pencil-icon button for quick, per-row editing — opens the
+        "Modify Product" dialog with this row's product preselected, mirroring
+        the double-click gesture. Sits just left of the quick-delete icon."""
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.addStretch()
+
+        edit_button = QToolButton()
+        # Plain pencil glyph, same text-glyph approach as the trash/▲▼ buttons
+        # (the app uses no QIcon image assets).
+        edit_button.setText("✏")
+        edit_button.setAutoRaise(True)
+        edit_button.setToolTip("Edit this product")
+        edit_button.setStyleSheet("QToolButton { font-size: 14px; }")
+        edit_button.clicked.connect(
+            lambda _checked, pid=product_id:
+                self.open_modify_product_dialog(preselect_product_id=pid)
+        )
+
+        layout.addWidget(edit_button)
+        layout.addStretch()
+        self.product_table.setCellWidget(row, 6, container)
+
     def _set_delete_cell_widget(self, row: int, product_id: int, product_name: str, platform_name):
         """Small red trash-icon button for quick, per-row deletion — an
         alternative to the "Delete Product" dialog for the common case of
@@ -486,7 +514,7 @@ class MainWindow(QWidget):
 
         layout.addWidget(delete_button)
         layout.addStretch()
-        self.product_table.setCellWidget(row, 6, container)
+        self.product_table.setCellWidget(row, 7, container)
 
     def delete_row_clicked(self, product_id: int, product_name: str, platform_name):
         """Handler for the per-row quick-delete button: confirm, then remove
@@ -595,6 +623,7 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 3, QTableWidgetItem(f"{product.target_price} €"))
 
             self._set_shops_cell(row, shop_records, all_shops)
+            self._set_edit_cell_widget(row, product.id)
             self._set_delete_cell_widget(row, product.id, product.name, platform_raw_name)
 
             # Best price column — lowest price among shops that currently have
