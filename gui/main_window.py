@@ -106,7 +106,16 @@ class MainWindow(QWidget):
         self.bot_stop_event = threading.Event()
         self.bot_schedule_timer = QTimer()
         self.bot_schedule_timer.setSingleShot(True)
+        # PreciseTimer so remainingTime() reflects the real interval — the
+        # default CoarseTimer rounds by up to 5%, which would inflate the
+        # countdown reading (and slightly skew the schedule itself).
+        self.bot_schedule_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.bot_schedule_timer.timeout.connect(self._launch_bot_worker)
+        # Ticks once a minute while the bot waits between passes, to refresh the
+        # "next automatic check in N min" countdown shown in the status label.
+        self.countdown_timer = QTimer()
+        self.countdown_timer.setInterval(60_000)
+        self.countdown_timer.timeout.connect(self._update_countdown)
 
         self.setup_ui()
 
@@ -805,6 +814,8 @@ class MainWindow(QWidget):
         self.bot_running = True
         self.bot_worker_active = True
         self.bot_stop_event.clear()
+        # A pass is starting — pause the between-passes countdown.
+        self.countdown_timer.stop()
         self.start_bot_button.setEnabled(False)
         self.stop_bot_button.setEnabled(True)
         self.status_label.setText("Starting bot...")
@@ -825,11 +836,24 @@ class MainWindow(QWidget):
             interval = load_settings()["check_interval_minutes"]
             self.status_label.setText(f"{pass_status} Next check in {interval} min.")
             self.bot_schedule_timer.start(interval * 60_000)
+            self.countdown_timer.start()
         else:
             self.bot_running = False
+            self.countdown_timer.stop()
             self.status_label.setText(stopped_status)
             self.start_bot_button.setEnabled(True)
             self.stop_bot_button.setEnabled(False)
+
+    def _update_countdown(self):
+        """Refresh the status label with the time left until the next scheduled
+        price check. Driven by the 1-minute countdown_timer; reads the live
+        remaining time straight off bot_schedule_timer so it never drifts.
+        remainingTime() returns -1 once the schedule timer has fired/stopped,
+        so the >0 guard also covers the moment a pass is about to launch."""
+        remaining = self.bot_schedule_timer.remainingTime()
+        if remaining > 0:
+            mins = (remaining + 59_999) // 60_000  # ceil to whole minutes
+            self.status_label.setText(f"Next automatic check in {mins} min.")
 
     def on_bot_finished(self):
         self.bot_worker_active = False
@@ -843,6 +867,7 @@ class MainWindow(QWidget):
     def stop_bot_worker(self):
         self.bot_running = False
         self.bot_schedule_timer.stop()
+        self.countdown_timer.stop()
         self.bot_stop_event.set()
         self.stop_bot_button.setEnabled(False)
 
@@ -856,6 +881,7 @@ class MainWindow(QWidget):
         if self.bot_running:
             self.stop_bot_worker()
         self.retry_timer.stop()
+        self.countdown_timer.stop()
         super().closeEvent(event)
 
 # Establish execution mode (console/logs + headless resolution) before anything
