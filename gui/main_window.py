@@ -14,6 +14,7 @@ from services.product_service import (
     delete_product_platforms,
     delete_products,
 )
+from PyQt6 import sip
 from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal, QByteArray, QSize
 from PyQt6.QtGui import QCursor, QIcon, QPixmap, QPainter
 from PyQt6.QtSvg import QSvgRenderer
@@ -145,6 +146,14 @@ class MainWindow(QWidget):
         # Pre-rendered red pencil icon for the per-row quick-edit button.
         self._edit_icon = _render_svg_icon(_EDIT_ICON_SVG)
 
+        # Re-issues the unavailable-store tooltip on an interval so it stays
+        # visible for as long as the cursor rests on the ⚠ marker, instead of
+        # vanishing after QToolTip's own short default display duration.
+        # Set up before setup_ui/load_products, which already clear it.
+        self._shop_tooltip_target = None
+        self._shop_tooltip_timer = QTimer(self)
+        self._shop_tooltip_timer.timeout.connect(self._refresh_shop_tooltip)
+
         self.setup_ui()
 
         self.load_products()
@@ -153,13 +162,6 @@ class MainWindow(QWidget):
         self.retry_timer = QTimer()
         self.retry_timer.timeout.connect(self.check_retry_queue)
         self.retry_timer.start(5 * 60 * 1000)
-
-        # Re-issues the unavailable-store tooltip on an interval so it stays
-        # visible for as long as the cursor rests on the ⚠ marker, instead of
-        # vanishing after QToolTip's own short default display duration.
-        self._shop_tooltip_target = None
-        self._shop_tooltip_timer = QTimer(self)
-        self._shop_tooltip_timer.timeout.connect(self._refresh_shop_tooltip)
 
     def _center_on_screen(self):
         """Centre the window on the largest connected screen — Qt otherwise
@@ -633,20 +635,46 @@ class MainWindow(QWidget):
             rect = label.rect()
             rect.moveTopLeft(label.mapToGlobal(rect.topLeft()))
             self._shop_tooltip_target = (label, rect, text)
-            self._refresh_shop_tooltip()
+            # Start before the first refresh: a refresh that decides to stop
+            # (cursor already gone, label deleted) must not be re-armed here.
             self._shop_tooltip_timer.start(400)
+            self._refresh_shop_tooltip()
         else:
-            self._shop_tooltip_timer.stop()
-            self._shop_tooltip_target = None
-            QToolTip.hideText()
+            self._clear_shop_tooltip()
+
+    def _clear_shop_tooltip(self):
+        """Stop re-issuing the shop tooltip and drop the reference to its label.
+
+        Must be called before any table rebuild: load_products() destroys every
+        cell widget, and a timer still pointing at a destroyed QLabel takes the
+        whole process down (see _refresh_shop_tooltip)."""
+        self._shop_tooltip_timer.stop()
+        self._shop_tooltip_target = None
+        QToolTip.hideText()
 
     def _refresh_shop_tooltip(self):
         if self._shop_tooltip_target is None:
+            self._shop_tooltip_timer.stop()
             return
         label, rect, text = self._shop_tooltip_target
+        # The label's C++ object may already be gone (a table rebuild deletes
+        # the cell widgets) while the Python wrapper survives here. Passing a
+        # deleted wrapper to showText raises RuntimeError inside a slot, which
+        # PyQt turns into qFatal — an instant "Aborted (core dumped)", not a
+        # catchable error. Also stop once the cursor leaves the label: QLabel
+        # only emits linkHovered("") if it still gets mouse events, so a label
+        # the cursor left "sideways" (e.g. a dialog opening over it) would
+        # otherwise keep this timer alive indefinitely.
+        if sip.isdeleted(label) or not rect.contains(QCursor.pos()):
+            self._clear_shop_tooltip()
+            return
         QToolTip.showText(QCursor.pos(), text, label, rect)
 
     def load_products(self):
+
+        # Every cell widget below is about to be destroyed, including the Shops
+        # QLabel the tooltip timer may still be pointing at.
+        self._clear_shop_tooltip()
 
         products_with_shops = get_products_with_shops()
         all_shops = get_available_shops()

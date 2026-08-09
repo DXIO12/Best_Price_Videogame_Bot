@@ -21,6 +21,7 @@ be imported from anywhere (GUI, bot, shops, resolvers) without import cycles.
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -143,6 +144,13 @@ class _Tee:
     Tolerates a ``None`` primary stream (a windowed exe has no stdout), so
     output still reaches the log file in release mode."""
 
+    # Python's traceback printer skips a stderr replacement that has no
+    # ``encoding`` attribute — without these, an unhandled exception in a Qt
+    # slot aborts the process with no traceback anywhere (neither console nor
+    # log), which makes such crashes almost impossible to diagnose.
+    encoding = "utf-8"
+    errors = "replace"
+
     def __init__(self, *streams):
         self._streams = [s for s in streams if s is not None]
 
@@ -189,6 +197,26 @@ def _attach_windows_console(debug: bool) -> None:
         pass
 
 
+def _install_excepthook() -> None:
+    """Log unhandled exceptions instead of letting Qt abort the process.
+
+    When an exception escapes a Qt slot and ``sys.excepthook`` is still the
+    default one, PyQt calls ``qFatal()``: the process dies with a bare
+    "Unhandled Python exception" / "Aborted (core dumped)" and the traceback
+    goes straight to the C-level stderr, so nothing reaches the log file — the
+    crash is effectively undiagnosable. Installing our own hook makes PyQt hand
+    the exception to us instead, so the traceback is teed to the log and the
+    GUI survives."""
+    def hook(exc_type, exc, tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc, tb)
+            return
+        print("[error] Unhandled exception:", file=sys.stderr)
+        traceback.print_exception(exc_type, exc, tb, file=sys.stderr)
+
+    sys.excepthook = hook
+
+
 _initialised = False
 
 
@@ -215,6 +243,8 @@ def init_runtime_mode() -> bool:
         sys.stderr = _Tee(sys.stderr, log_fh)
     except Exception:
         pass
+
+    _install_excepthook()
 
     mode = "DEBUG (visible browsers, console + logs)" if debug \
         else "RELEASE (headless, background)"
