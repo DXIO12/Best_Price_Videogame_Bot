@@ -1,5 +1,6 @@
 import sys
 import threading
+from config.runtime_config import init_runtime_mode
 from bot.bot import load_settings
 from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
@@ -825,6 +826,10 @@ class MainWindow(QWidget):
             self.stop_bot_worker()
         self.retry_timer.stop()
         super().closeEvent(event)
+
+# Establish execution mode (console/logs + headless resolution) before anything
+# scrapes or prints. Must run before the browsers or Qt event loop start.
+init_runtime_mode()
 
 app = QApplication(sys.argv)
 

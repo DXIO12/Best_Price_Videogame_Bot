@@ -1,5 +1,7 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from config.runtime_config import resolve_headless
+
 BASE_URL = "https://www.pccomponentes.com"
 
 PLATFORM_MAP = {
@@ -13,7 +15,7 @@ PLATFORM_MAP = {
 
 def resolve_pccomponentes_product_url(search_url: str, platform: str | None = None):
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=resolve_headless())
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

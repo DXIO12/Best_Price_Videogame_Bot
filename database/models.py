@@ -65,6 +65,11 @@ class Setting(Base):
 
     repeat_notification_minutes = Column(Integer)
 
+    # Debug mode: True → visible browsers + attached console/logs.
+    # False → headless scraping in the background. None → resolved from
+    # the frozen-executable default in runtime_config.get_debug_mode().
+    debug_mode = Column(Boolean)
+
 
 class Product(Base):
 

@@ -16,6 +16,8 @@ from shops.corteingles import get_elcorteingles_price
 from shops.carrefour import get_carrefour_price
 from shops.playwright_utils import stop_browser
 
+from config.runtime_config import get_debug_mode
+
 from sqlalchemy import func
 
 from database.db import SessionLocal
@@ -62,6 +64,7 @@ def load_settings() -> dict:
             "notify_only_best_price": setting.notify_only_best_price if setting.notify_only_best_price is not None else False,
             "repeat_notifications": setting.repeat_notifications if setting.repeat_notifications is not None else True,
             "repeat_notification_minutes": setting.repeat_notification_minutes or 90,
+            "debug_mode": get_debug_mode(),
         }
 
     # Defaults when no settings row exists
@@ -70,6 +73,7 @@ def load_settings() -> dict:
         "notify_only_best_price": False,
         "repeat_notifications": True,
         "repeat_notification_minutes": 90,
+        "debug_mode": get_debug_mode(),
     }
 
 
@@ -309,6 +313,11 @@ def _scrape(record: ProductShop) -> float | None:
 # =========================================================
 
 if __name__ == "__main__":
+    from config.runtime_config import init_runtime_mode
+
+    # Console/log setup + headless resolution before scraping starts.
+    init_runtime_mode()
+
     settings = load_settings()
     interval = settings["check_interval_minutes"]
 

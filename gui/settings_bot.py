@@ -14,6 +14,7 @@ from PyQt6.QtCore import pyqtSignal
 
 from database.db import SessionLocal
 from database.models import Setting
+from config.runtime_config import get_debug_mode, write_config_settings
 
 
 DEFAULTS = {
@@ -21,6 +22,7 @@ DEFAULTS = {
     "notify_only_best_price": False,
     "repeat_notifications": True,
     "repeat_notification_minutes": 90,
+    "debug_mode": True,
 }
 
 _TOOLTIPS = {
@@ -41,6 +43,12 @@ _TOOLTIPS = {
         "Minutes to wait before repeating a notification for the same product.\n"
         "Only active when 'Repeat notifications' is ON.\n"
         "Default: 90 min."
+    ),
+    "debug_mode": (
+        "ON  → Visible browser windows while scraping + a console with logs.\n"
+        "OFF → Headless scraping in the background (Release mode).\n"
+        "Takes effect on the next app launch. Default: ON in development, "
+        "OFF in the packaged executable."
     ),
 }
 
@@ -150,6 +158,17 @@ class SettingsBotDialog(QDialog):
             self._repeat_spin,
         )
 
+        # debug_mode (frozen-aware default when no explicit value is stored yet)
+        self._debug_chk = QCheckBox()
+        self._debug_chk.setChecked(
+            s.debug_mode if s and s.debug_mode is not None
+            else get_debug_mode()
+        )
+        form.addRow(
+            self._label_widget("debug_mode", "Debug mode"),
+            self._debug_chk,
+        )
+
         layout.addLayout(form)
         layout.addStretch()
 
@@ -181,6 +200,7 @@ class SettingsBotDialog(QDialog):
         notify_best = self._best_price_chk.isChecked()
         repeat = self._repeat_chk.isChecked()
         repeat_mins = self._repeat_spin.value()
+        debug = self._debug_chk.isChecked()
 
         db = SessionLocal()
         setting = db.query(Setting).first()
@@ -192,9 +212,19 @@ class SettingsBotDialog(QDialog):
         setting.notify_only_best_price = notify_best
         setting.repeat_notifications = repeat
         setting.repeat_notification_minutes = repeat_mins
+        setting.debug_mode = debug
 
         db.commit()
         db.close()
+
+        # Mirror to config.json for external tooling (DB stays source of truth).
+        write_config_settings({
+            "check_interval_minutes": interval,
+            "notify_only_best_price": notify_best,
+            "repeat_notifications": repeat,
+            "repeat_notification_minutes": repeat_mins,
+            "debug_mode": debug,
+        })
 
         print("===================================")
         print(f"[Settings Bot] Check Interval:          {interval} min")
@@ -202,6 +232,7 @@ class SettingsBotDialog(QDialog):
         print(f"[Settings Bot] Repeat Notifications:    {repeat}")
         if repeat:
             print(f"[Settings Bot] Repeat After:            {repeat_mins} min")
+        print(f"[Settings Bot] Debug Mode:              {debug}")
         print("===================================")
 
         self.settings_saved.emit()

@@ -1,12 +1,8 @@
-import os
-import sys
 from contextlib import contextmanager
 
 from playwright.sync_api import sync_playwright
 
-# Headless when running as a frozen executable or launched via a launcher script.
-# Direct `python -m ...` invocations leave both flags unset → visible (debug mode).
-_HEADLESS = getattr(sys, "frozen", False) or os.environ.get("PRICE_BOT_HEADLESS") == "1"
+from config.runtime_config import resolve_headless
 
 
 DEFAULT_USER_AGENT = (
@@ -26,11 +22,22 @@ class BrowserManager:
 
     def start(self):
         if self.p is None:
+            # Resolve headless from the current debug_mode at first launch, so
+            # the DB/settings value is honoured when scraping actually begins.
+            self.headless = resolve_headless()
             self.p_context = sync_playwright()
             self.p = self.p_context.__enter__()
-            self.browser = getattr(self.p, self.browser_name).launch(
-                headless=self.headless
-            )
+
+            launch_kwargs = {"headless": self.headless}
+            if self.browser_name == "chromium":
+                # Use the full Chromium binary (new headless mode) instead of
+                # the lightweight "headless shell" that Playwright launches by
+                # default for headless=True. Some shops (e.g. El Corte Inglés)
+                # only render the price in the full browser, so with debug mode
+                # OFF the shell returned no price at all.
+                launch_kwargs["channel"] = "chromium"
+
+            self.browser = getattr(self.p, self.browser_name).launch(**launch_kwargs)
 
     def stop(self):
         if self.browser is not None:
@@ -64,8 +71,9 @@ class BrowserManager:
                 pass
 
 
-browser_manager = BrowserManager(headless=_HEADLESS)
-firefox_manager = BrowserManager(headless=_HEADLESS, browser_name="firefox")
+# Headless is resolved lazily in BrowserManager.start() via resolve_headless().
+browser_manager = BrowserManager()
+firefox_manager = BrowserManager(browser_name="firefox")
 
 
 @contextmanager

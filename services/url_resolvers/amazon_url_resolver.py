@@ -1,6 +1,8 @@
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from config.runtime_config import resolve_headless
+
 
 def clean_amazon_url(href: str) -> str | None:
     """Extract the clean /dp/ASIN url, dropping query params and fragments."""
@@ -14,7 +16,7 @@ def clean_amazon_url(href: str) -> str | None:
 
 def resolve_amazon_product_url(search_url, platform: str | None = None):
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=resolve_headless())
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

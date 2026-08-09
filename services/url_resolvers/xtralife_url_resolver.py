@@ -2,6 +2,8 @@
 
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+
+from config.runtime_config import resolve_headless
 from urllib.parse import unquote_plus
 
 BASE_URL = "https://www.xtralife.com"
@@ -39,7 +41,7 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
     query = unquote_plus(query)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=resolve_headless())
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
