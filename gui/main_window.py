@@ -548,7 +548,7 @@ class MainWindow(QWidget):
         layout.addStretch()
 
         edit_button = QToolButton()
-        # Red pencil icon (inline SVG → QIcon) — clearer than a text glyph.
+        # Grey pencil icon (inline SVG → QIcon) — clearer than a text glyph.
         edit_button.setIcon(self._edit_icon)
         edit_button.setIconSize(QSize(16, 16))
         edit_button.setAutoRaise(True)
