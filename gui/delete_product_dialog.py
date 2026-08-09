@@ -1,4 +1,10 @@
-from services.product_service import delete_products, get_products, delete_product_platforms
+from services.product_service import (
+    delete_products,
+    get_products,
+    delete_product_platforms,
+    get_platform_priorities,
+    to_gui_names,
+)
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
@@ -74,21 +80,33 @@ class DeleteProductDialog(QDialog):
 
     def load_products(self):
         products = get_products()
+        priorities = get_platform_priorities()
 
-        # Build rows per platform using the relational platform list
-        display_rows = []  # tuples of (product_id, product_name, platform, target_price)
+        # Build rows per platform using the relational platform list, keeping the
+        # same priority order the main window shows so both tables line up.
+        # Rows carry both names: the GUI label is displayed, the DB name is what
+        # delete_product_platforms() matches on.
+        display_rows = []  # (product_id, product_name, platform_db, platform_gui, target_price)
         for product in products:
             if product.platforms:
-                plats = [platform.name for platform in product.platforms]
+                plats = to_gui_names([p.name for p in product.platforms])
+                for platform, plat_gui in zip(product.platforms, plats):
+                    priority = priorities.get((product.id, platform.id), 0)
+                    display_rows.append(
+                        (priority, product.id, product.name, platform.name, plat_gui, product.target_price)
+                    )
             else:
-                plats = ['']
-            for plat in plats:
-                display_rows.append((product.id, product.name, plat, product.target_price))
+                # No platform assigned: no product_platforms row to read a
+                # priority from, so it sorts first like in the main window.
+                display_rows.append((0, product.id, product.name, '', '', product.target_price))
+
+        display_rows.sort(key=lambda entry: entry[0])
+        display_rows = [entry[1:] for entry in display_rows]
 
         self.product_table.setRowCount(0)
         self.product_table.setRowCount(len(display_rows))
 
-        for row, (pid, name, plat, price) in enumerate(display_rows):
+        for row, (pid, name, plat, plat_gui, price) in enumerate(display_rows):
             checkbox = QCheckBox()
             checkbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             checkbox.setStyleSheet("QCheckBox { margin: 0px; padding: 0px; }")
@@ -104,7 +122,7 @@ class DeleteProductDialog(QDialog):
             self.product_table.setCellWidget(row, 0, checkbox_widget)
 
             self.product_table.setItem(row, 1, QTableWidgetItem(name))
-            self.product_table.setItem(row, 2, QTableWidgetItem(plat))
+            self.product_table.setItem(row, 2, QTableWidgetItem(plat_gui))
             self.product_table.setItem(row, 3, QTableWidgetItem(f"{price} €"))
 
     def confirm_delete(self):

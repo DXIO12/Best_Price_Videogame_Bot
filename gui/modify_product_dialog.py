@@ -1,4 +1,9 @@
-from services.product_service import modify_product, get_products, to_gui_names
+from services.product_service import (
+    modify_product,
+    get_products,
+    to_gui_names,
+    get_platform_priorities,
+)
 from gui.add_product_dialog import MultiSelectDropdown, get_available_shops
 from database.db import SessionLocal
 from database.models import ProductShop
@@ -108,9 +113,11 @@ class ModifyProductDialog(QDialog):
             "Xbox Series X"
         ]
 
-        # Build rows per platform (one row per platform)
+        # Build rows per platform (one row per platform), kept in the same
+        # priority order the main window shows so both tables line up.
         self.product_rows = []
         display_rows = []
+        priorities = get_platform_priorities()
 
         for product in products:
             if product.platforms:
@@ -125,8 +132,17 @@ class ModifyProductDialog(QDialog):
                 'original_price': product.target_price
             })
 
-            for plat in plats:
-                display_rows.append((product.id, product.name, plat, product.target_price))
+            if product.platforms:
+                for platform, plat in zip(product.platforms, plats):
+                    priority = priorities.get((product.id, platform.id), 0)
+                    display_rows.append((priority, product.id, product.name, plat, product.target_price))
+            else:
+                # No platform assigned: no product_platforms row to read a
+                # priority from, so it sorts first like in the main window.
+                display_rows.append((0, product.id, product.name, '', product.target_price))
+
+        display_rows.sort(key=lambda entry: entry[0])
+        display_rows = [entry[1:] for entry in display_rows]
 
         self._loading = True
         self.product_table.setRowCount(0)
