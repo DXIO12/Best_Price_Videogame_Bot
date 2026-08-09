@@ -1,4 +1,4 @@
-from services.product_service import create_product
+from services.product_service import create_product, get_platform_priorities
 from PyQt6.QtCore import pyqtSignal, QTimer, QPoint
 from PyQt6.QtWidgets import (
     QDialog,
@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QDoubleSpinBox,
+    QSpinBox,
     QHBoxLayout,
     QCheckBox,
     QWidget,
@@ -289,6 +290,18 @@ class AddProductDialog(QDialog):
         self.price_input.setSuffix(" €")
         layout.addWidget(self.price_input)
 
+        layout.addWidget(QLabel("Search Priority (1 = top of the table)"))
+        self.priority_input = QSpinBox()
+        existing_rows = len(get_platform_priorities())
+        self.priority_input.setMinimum(1)
+        self.priority_input.setMaximum(existing_rows + 1)
+        self.priority_input.setValue(1)  # default: add as the first product
+        self.priority_input.setToolTip(
+            "Where this product appears in the products table.\n"
+            "1 = first (searched first). Leave at 1 to add it at the top."
+        )
+        layout.addWidget(self.priority_input)
+
         layout.addWidget(QLabel("Select Shops"))
         self.available_shops = get_available_shops_urlsearcher()
         self.shop_selector = MultiSelectDropdown(self.available_shops)
@@ -373,7 +386,8 @@ class AddProductDialog(QDialog):
             platforms=selected_platforms,
             target_price=target_price,
             shops=selected_shops,
-            shop_urls=self.manual_shop_urls
+            shop_urls=self.manual_shop_urls,
+            priority_position=self.priority_input.value(),
         )
 
         manual_shops = set(self.manual_shop_urls.keys())

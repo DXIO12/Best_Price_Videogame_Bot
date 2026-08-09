@@ -14,8 +14,9 @@ from services.product_service import (
     delete_product_platforms,
     delete_products,
 )
-from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QCursor
+from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal, QByteArray, QSize
+from PyQt6.QtGui import QCursor, QIcon, QPixmap, QPainter
+from PyQt6.QtSvg import QSvgRenderer
 from database.db import SessionLocal
 from database.models import ProductShop, Setting
 from PyQt6.QtWidgets import (
@@ -37,6 +38,30 @@ from PyQt6.QtWidgets import (
 from gui.bot_worker import BotWorker
 from services.resolver_worker import ResolverWorker, RetryWorker
 from services.resolve_urls_service import MAX_RETRIES
+
+
+# Grey pencil "edit" icon (Material "edit" glyph path), kept inline so no image
+# asset file or PyInstaller --add-data entry is needed. Rendered to a QIcon at
+# runtime — clearer than a text pencil glyph, which read ambiguously. Grey (not
+# red) so it doesn't read as a destructive action like the red delete icon.
+_EDIT_ICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z'
+    b'M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0'
+    b'l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>'
+)
+
+
+def _render_svg_icon(svg_bytes: bytes, size: int = 64) -> QIcon:
+    """Render an inline SVG to a QIcon. A QApplication must already exist."""
+    renderer = QSvgRenderer(QByteArray(svg_bytes))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class PriorityTableWidget(QTableWidget):
@@ -116,6 +141,9 @@ class MainWindow(QWidget):
         self.countdown_timer = QTimer()
         self.countdown_timer.setInterval(60_000)
         self.countdown_timer.timeout.connect(self._update_countdown)
+
+        # Pre-rendered red pencil icon for the per-row quick-edit button.
+        self._edit_icon = _render_svg_icon(_EDIT_ICON_SVG)
 
         self.setup_ui()
 
@@ -357,6 +385,9 @@ class MainWindow(QWidget):
         if name_item is None:
             return
         product_id = name_item.data(Qt.ItemDataRole.UserRole)
+        if product_id is None:
+            # The pinned "+" row (row 0) has no product behind it.
+            return
         self.open_modify_product_dialog(preselect_product_id=product_id)
 
     # =========================================
@@ -429,17 +460,20 @@ class MainWindow(QWidget):
             parts.append(label)
         return ", ".join(parts) if parts else "None"
 
-    def _set_rank_cell_widget(self, row: int, key: tuple, is_first: bool, is_last: bool):
+    def _set_rank_cell_widget(self, row: int, rank: int, key: tuple, is_first: bool, is_last: bool):
         """Rank number plus small ▲▼ nudge buttons — moving a row by exactly
         one position via drag-and-drop is fiddly, so this gives a precise
         one-step alternative. The rank QTableWidgetItem underneath still
-        holds the (product_id, platform_id) key used by drag reordering."""
+        holds the (product_id, platform_id) key used by drag reordering.
+
+        `row` is the table row (offset by the pinned "+" row), while `rank` is
+        the 1-based priority number actually shown to the user."""
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(4, 0, 2, 0)
         layout.setSpacing(2)
 
-        rank_label = QLabel(str(row + 1))
+        rank_label = QLabel(str(rank))
         layout.addWidget(rank_label)
 
         up_button = QToolButton()
@@ -477,6 +511,33 @@ class MainWindow(QWidget):
         reorder_platform_priorities(ordered_keys)
         self.load_products()
 
+    def _set_add_row(self, row: int):
+        """Pinned, non-editable first row whose only interactive element is a
+        single '+' button spanning the edit + delete columns — a shortcut that
+        opens the Add Product dialog. Kept as a real table row (not a bar above
+        the table) so it lines up with the action columns."""
+        # Blank, non-interactive cells for the data columns (0-5): enabled but
+        # not selectable/editable/draggable, so this row can't be picked up by
+        # the drag-and-drop reorder and never opens the modify dialog.
+        for col in range(6):
+            blank = QTableWidgetItem("")
+            blank.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self.product_table.setItem(row, col, blank)
+
+        # A single '+' button spanning the edit (6) and delete (7) columns.
+        self.product_table.setSpan(row, 6, 1, 2)
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        add_button = QToolButton()
+        add_button.setText("＋")
+        add_button.setAutoRaise(True)
+        add_button.setToolTip("Add a new product")
+        add_button.setStyleSheet("QToolButton { font-size: 16px; font-weight: bold; }")
+        add_button.clicked.connect(self.open_add_product_dialog)
+        layout.addWidget(add_button)
+        self.product_table.setCellWidget(row, 6, container)
+
     def _set_edit_cell_widget(self, row: int, product_id: int):
         """Small pencil-icon button for quick, per-row editing — opens the
         "Modify Product" dialog with this row's product preselected, mirroring
@@ -487,12 +548,11 @@ class MainWindow(QWidget):
         layout.addStretch()
 
         edit_button = QToolButton()
-        # Plain pencil glyph, same text-glyph approach as the trash/▲▼ buttons
-        # (the app uses no QIcon image assets).
-        edit_button.setText("✏")
+        # Red pencil icon (inline SVG → QIcon) — clearer than a text glyph.
+        edit_button.setIcon(self._edit_icon)
+        edit_button.setIconSize(QSize(16, 16))
         edit_button.setAutoRaise(True)
         edit_button.setToolTip("Edit this product")
-        edit_button.setStyleSheet("QToolButton { font-size: 14px; }")
         edit_button.clicked.connect(
             lambda _checked, pid=product_id:
                 self.open_modify_product_dialog(preselect_product_id=pid)
@@ -611,19 +671,29 @@ class MainWindow(QWidget):
 
         display_rows.sort(key=lambda entry: entry[0])
 
+        # Row 0 is a pinned, non-editable "+" shortcut row; the products follow
+        # it, so every product sits one table-row below its own rank number.
+        self.product_table.clearSpans()
         self.product_table.setRowCount(0)
-        self.product_table.setRowCount(len(display_rows))
+        self.product_table.setRowCount(len(display_rows) + 1)
+        self._set_add_row(0)
 
         # Fetch best prices from DB
         db = SessionLocal()
 
-        for row, (priority, key, product, platform_value, shop_records, platform_raw_name) in enumerate(display_rows):
+        for product_index, (priority, key, product, platform_value, shop_records, platform_raw_name) in enumerate(display_rows):
+            row = product_index + 1  # offset by the pinned "+" row at index 0
+            rank = product_index + 1
 
-            rank_item = QTableWidgetItem(str(row + 1))
+            rank_item = QTableWidgetItem(str(rank))
             rank_item.setData(Qt.ItemDataRole.UserRole, key)
             rank_item.setFlags(rank_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.product_table.setItem(row, 0, rank_item)
-            self._set_rank_cell_widget(row, key, is_first=(row == 0), is_last=(row == len(display_rows) - 1))
+            self._set_rank_cell_widget(
+                row, rank, key,
+                is_first=(product_index == 0),
+                is_last=(product_index == len(display_rows) - 1),
+            )
 
             name_item = QTableWidgetItem(product.name)
             name_item.setData(Qt.ItemDataRole.UserRole, product.id)
@@ -653,8 +723,10 @@ class MainWindow(QWidget):
             self.product_table.setItem(row, 5, QTableWidgetItem(best_price_text))
 
         db.close()
+        # Narrow pinned "+" row; standard height for the product rows below it.
+        self.product_table.setRowHeight(0, 24)
         ROW_HEIGHT = 36
-        for row in range(self.product_table.rowCount()):
+        for row in range(1, self.product_table.rowCount()):
             self.product_table.setRowHeight(row, ROW_HEIGHT)
 
     # =========================================
@@ -665,10 +737,10 @@ class MainWindow(QWidget):
         """A row was dragged from source_row to target_row. Recompute the
         (product_id, platform_id) order and persist it, then fully rebuild
         the table from the database so items and cell widgets stay in sync."""
-        keys = [
-            self.product_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-            for row in range(self.product_table.rowCount())
-        ]
+        keys = []
+        for row in range(self.product_table.rowCount()):
+            item = self.product_table.item(row, 0)
+            keys.append(item.data(Qt.ItemDataRole.UserRole) if item is not None else None)
 
         if source_row < 0 or source_row >= len(keys):
             return

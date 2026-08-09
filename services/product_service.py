@@ -19,7 +19,7 @@ def to_gui_names(db_names: list[str]) -> list[str]:
     """Translate DB-stored platform names back to GUI display labels."""
     return [_PLATFORM_DB_TO_GUI.get(n, n) for n in db_names]
 
-def create_product(name, platforms, target_price, shops=None, shop_urls=None):
+def create_product(name, platforms, target_price, shops=None, shop_urls=None, priority_position=None):
 
     db = SessionLocal()
 
@@ -64,8 +64,39 @@ def create_product(name, platforms, target_price, shops=None, shop_urls=None):
 
     db.commit()
     product_id = product.id
+    new_platform_ids = [platform.id for platform in platform_objects]
     db.close()
+
+    # Place the new product's rows at the requested table position (default:
+    # first). Priority lives per (product, platform), so a product with several
+    # platforms occupies several consecutive rows.
+    _place_product_at_position(product_id, new_platform_ids, priority_position)
     return product_id
+
+
+def _place_product_at_position(product_id, platform_ids, position):
+    """Insert a newly created product's (product_id, platform_id) rows at a
+    1-based position among the existing priority-ordered rows, then renumber
+    everything. position None or < 1 places the product first (top)."""
+    if not platform_ids:
+        return
+
+    new_keys = [(product_id, platform_id) for platform_id in platform_ids]
+
+    priorities = get_platform_priorities()  # already includes the new rows
+    new_key_set = set(new_keys)
+    existing = sorted(
+        (key for key in priorities if key not in new_key_set),
+        key=lambda key: priorities[key],
+    )
+
+    if position is None or position < 1:
+        index = 0
+    else:
+        index = min(position - 1, len(existing))
+
+    ordered = existing[:index] + new_keys + existing[index:]
+    reorder_platform_priorities(ordered)
 
 
 def get_products():
