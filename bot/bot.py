@@ -1,4 +1,7 @@
 import os
+import queue
+import threading
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -47,6 +50,11 @@ SHOP_FUNCTIONS = {
 }
 
 
+# Threads used when allow_parallel_scraping is on and the DB has no explicit
+# value. Kept low on purpose: every worker launches its own browser.
+DEFAULT_PARALLEL_WORKERS = 3
+
+
 # =========================================================
 # LOAD SETTINGS FROM DB
 # =========================================================
@@ -64,6 +72,8 @@ def load_settings() -> dict:
             "notify_only_best_price": setting.notify_only_best_price if setting.notify_only_best_price is not None else False,
             "repeat_notifications": setting.repeat_notifications if setting.repeat_notifications is not None else True,
             "repeat_notification_minutes": setting.repeat_notification_minutes or 90,
+            "allow_parallel_scraping": setting.allow_parallel_scraping if setting.allow_parallel_scraping is not None else False,
+            "max_parallel_workers": setting.max_parallel_workers or DEFAULT_PARALLEL_WORKERS,
             "debug_mode": get_debug_mode(),
         }
 
@@ -73,6 +83,8 @@ def load_settings() -> dict:
         "notify_only_best_price": False,
         "repeat_notifications": True,
         "repeat_notification_minutes": 90,
+        "allow_parallel_scraping": False,
+        "max_parallel_workers": DEFAULT_PARALLEL_WORKERS,
         "debug_mode": get_debug_mode(),
     }
 
@@ -179,6 +191,22 @@ def check_prices(stop_event=None):
             print("No products in database.")
             return
 
+        records_by_product = {
+            product.id: db.query(ProductShop).filter(
+                ProductShop.product_id == product.id
+            ).all()
+            for product in products
+        }
+
+        # In parallel mode every price is fetched up front, then the loop below
+        # reads them from this dict instead of scraping inline. Notifications and
+        # DB writes stay on this thread and keep running in priority order.
+        prices = None
+        if settings["allow_parallel_scraping"]:
+            prices = _scrape_parallel(
+                records_by_product, settings["max_parallel_workers"], stop_event
+            )
+
         for product in products:
             if stop_event is not None and stop_event.is_set():
                 print("Stop requested — halting price check.")
@@ -186,9 +214,7 @@ def check_prices(stop_event=None):
 
             name = product.name
             target_price = product.target_price
-            shop_records = db.query(ProductShop).filter(
-                ProductShop.product_id == product.id
-            ).all()
+            shop_records = records_by_product[product.id]
 
             if not shop_records:
                 print(f"No shops configured for {name}, skipping.")
@@ -197,9 +223,11 @@ def check_prices(stop_event=None):
             print(f"\nProduct: {name} | Target: {target_price}€")
 
             if settings["notify_only_best_price"]:
-                _check_best_price(db, name, target_price, shop_records, settings, stop_event)
+                _check_best_price(db, name, target_price, shop_records, settings,
+                                  stop_event, prices)
             else:
-                _check_all_shops(db, name, target_price, shop_records, settings, stop_event)
+                _check_all_shops(db, name, target_price, shop_records, settings,
+                                 stop_event, prices)
 
     finally:
         db.close()
@@ -214,7 +242,8 @@ def check_prices(stop_event=None):
 # =========================================================
 
 def _check_best_price(db, product_name: str, target_price: float,
-                      shop_records: list, settings: dict, stop_event=None):
+                      shop_records: list, settings: dict, stop_event=None,
+                      prices: dict | None = None):
     """Scrape all shops, then send one notification for the cheapest hit."""
     hits = []
 
@@ -222,7 +251,7 @@ def _check_best_price(db, product_name: str, target_price: float,
         if stop_event is not None and stop_event.is_set():
             break
 
-        price = _scrape(record)
+        price = _scrape(record, prices)
         if price is not None:
             save_shop_record(db, record, price, notified=False)
             if price <= target_price:
@@ -250,13 +279,14 @@ def _check_best_price(db, product_name: str, target_price: float,
 # =========================================================
 
 def _check_all_shops(db, product_name: str, target_price: float,
-                     shop_records: list, settings: dict, stop_event=None):
+                     shop_records: list, settings: dict, stop_event=None,
+                     prices: dict | None = None):
     """Scrape each shop and notify individually for every hit."""
     for record in shop_records:
         if stop_event is not None and stop_event.is_set():
             break
 
-        price = _scrape(record)
+        price = _scrape(record, prices)
 
         if price is None:
             if record.url and record.url.strip():
@@ -284,8 +314,16 @@ def _check_all_shops(db, product_name: str, target_price: float,
 # SCRAPE HELPER
 # =========================================================
 
-def _scrape(record: ProductShop) -> float | None:
-    """Call the right scraper for a ProductShop record. Returns price or None."""
+def _scrape(record: ProductShop, prices: dict | None = None) -> float | None:
+    """Price for a ProductShop record, scraped now or read from a parallel pass.
+
+    When ``prices`` is given (parallel mode) the value was already fetched by a
+    worker thread, so nothing is scraped here. Records missing from it are the
+    ones the parallel pass skipped for the very same reasons checked below — no
+    scraper or no URL — so both modes end up treating them identically."""
+    if prices is not None:
+        return prices.get(record.id)
+
     shop_key = record.shop.strip().lower()
     scraper = SHOP_FUNCTIONS.get(shop_key)
 
@@ -297,15 +335,104 @@ def _scrape(record: ProductShop) -> float | None:
         print(f"  No URL set for {record.shop} — skipping.")
         return None
 
+    return _scrape_url(scraper, record.shop, record.url)
+
+
+def _scrape_url(scraper, shop_name: str, url: str) -> float | None:
+    """Run a scraper against a URL. Never raises — returns None on failure.
+
+    Takes plain values rather than a ProductShop so it can be called from the
+    parallel workers, where no ORM object may cross the thread boundary."""
     try:
-        print(f"  Scraping {record.shop}...")
-        price = scraper(record.url)
-        print(f"  {record.shop}: {price}€" if price is not None
-              else f"  {record.shop}: could not retrieve price.")
+        print(f"  Scraping {shop_name}...")
+        price = scraper(url)
+        print(f"  {shop_name}: {price}€" if price is not None
+              else f"  {shop_name}: could not retrieve price.")
         return price
     except Exception as e:
-        print(f"  Error scraping {record.shop}: {e}")
+        print(f"  Error scraping {shop_name}: {e}")
         return None
+
+
+# =========================================================
+# PARALLEL SCRAPING
+# =========================================================
+
+def _scrape_parallel(records_by_product: dict, max_workers: int,
+                     stop_event=None) -> dict:
+    """Scrape every product×shop pair concurrently. Returns {shop_record_id: price}.
+
+    Jobs are bucketed **by shop** and each bucket is handled start-to-finish by a
+    single thread, so a given site never receives two simultaneous requests — the
+    shops here are already anti-bot sensitive. Effective parallelism is therefore
+    the number of distinct shops, capped at ``max_workers``.
+
+    Each worker owns its own Playwright driver and browser (the sync API is bound
+    to the creating thread) and closes them before exiting. Only plain values
+    cross the thread boundary: the SQLAlchemy session stays with the caller.
+
+    A record absent from the returned dict was never attempted — either it was
+    filtered out below, or ``stop_event`` fired first."""
+    buckets = defaultdict(list)
+
+    for shop_records in records_by_product.values():
+        for record in shop_records:
+            shop_key = record.shop.strip().lower()
+
+            if shop_key not in SHOP_FUNCTIONS:
+                print(f"  No scraper for shop '{record.shop}' — skipping.")
+                continue
+
+            if not record.url or not record.url.strip():
+                print(f"  No URL set for {record.shop} — skipping.")
+                continue
+
+            buckets[shop_key].append((record.id, record.shop, record.url))
+
+    if not buckets:
+        return {}
+
+    pending = queue.Queue()
+    for shop_key, jobs in buckets.items():
+        pending.put((shop_key, jobs))
+
+    results = {}
+    results_lock = threading.Lock()
+    worker_count = max(1, min(max_workers, len(buckets)))
+
+    def worker():
+        try:
+            while stop_event is None or not stop_event.is_set():
+                try:
+                    shop_key, jobs = pending.get_nowait()
+                except queue.Empty:
+                    break
+
+                scraper = SHOP_FUNCTIONS[shop_key]
+                for record_id, shop_name, url in jobs:
+                    if stop_event is not None and stop_event.is_set():
+                        break
+
+                    price = _scrape_url(scraper, shop_name, url)
+                    with results_lock:
+                        results[record_id] = price
+        finally:
+            # Closes this worker's own browsers; a driver cannot be shut down
+            # from another thread.
+            stop_browser()
+
+    print(f"Scraping {len(buckets)} shop(s) in parallel with {worker_count} worker(s)...")
+
+    threads = [
+        threading.Thread(target=worker, name=f"scraper-{index}", daemon=True)
+        for index in range(worker_count)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    return results
 
 
 # =========================================================

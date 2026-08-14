@@ -1,3 +1,4 @@
+import threading
 from contextlib import contextmanager
 
 from playwright.sync_api import sync_playwright
@@ -71,23 +72,52 @@ class BrowserManager:
                 pass
 
 
-# Headless is resolved lazily in BrowserManager.start() via resolve_headless().
-browser_manager = BrowserManager()
-firefox_manager = BrowserManager(browser_name="firefox")
+# Playwright's sync API binds its driver to the thread that creates it: a
+# BrowserManager — and every Browser/Page underneath it — may only be used from
+# that same thread. Module-level singletons would therefore break as soon as two
+# scraping threads shared them, so each thread gets its own pair instead.
+_thread_state = threading.local()
+
+
+def _managers() -> dict:
+    """Return this thread's BrowserManager pair, creating it on first use.
+
+    Headless is still resolved lazily inside BrowserManager.start(), so every
+    thread honours the current debug_mode when it actually launches a browser."""
+    managers = getattr(_thread_state, "managers", None)
+    if managers is None:
+        managers = {
+            "chromium": BrowserManager(browser_name="chromium"),
+            "firefox": BrowserManager(browser_name="firefox"),
+        }
+        _thread_state.managers = managers
+    return managers
 
 
 @contextmanager
 def chromium_page(url, timeout=30000, wait_until="commit"):
-    with browser_manager.new_page(url, timeout=timeout, wait_until=wait_until) as page:
+    manager = _managers()["chromium"]
+    with manager.new_page(url, timeout=timeout, wait_until=wait_until) as page:
         yield page
 
 
 @contextmanager
 def firefox_page(url, timeout=30000, wait_until="commit"):
-    with firefox_manager.new_page(url, timeout=timeout, wait_until=wait_until) as page:
+    manager = _managers()["firefox"]
+    with manager.new_page(url, timeout=timeout, wait_until=wait_until) as page:
         yield page
 
 
 def stop_browser():
-    browser_manager.stop()
-    firefox_manager.stop()
+    """Close the browsers owned by the calling thread.
+
+    Must be called from the thread that opened them — a Playwright driver cannot
+    be shut down from another thread. Threads that never scraped are a no-op, so
+    it is always safe to call. Each parallel scraping worker calls this before
+    it exits; the main thread calls it at the end of a price check."""
+    managers = getattr(_thread_state, "managers", None)
+    if managers is None:
+        return
+
+    for manager in managers.values():
+        manager.stop()
