@@ -43,8 +43,8 @@
       ]
     }
   ],
-  "repeat_notification_minutes": 60,
+  "repeat_notification_minutes": 90,
   "debug_mode": false,
   "allow_parallel_scraping": true,
-  "max_parallel_workers": 8
+  "max_parallel_workers": 4
 }
