@@ -15,6 +15,12 @@ def get_mediamarkt_price(url):
             # the bare element races the render on a busy machine. "[0-9]" and
             # not "\d": Playwright unescapes backslashes inside the selector
             # string, so "\d" silently becomes a literal "d" and never matches.
+            #
+            # This only works because the node is a leaf (`<span ...>58,</span>`).
+            # `:text-matches` matches the *smallest* element containing the text,
+            # so if MediaMarkt ever nests the digits in a child span this stops
+            # matching and silently burns the full timeout — the exact bug that
+            # hit PCComponentes. test_wait_selectors.py guards against it.
             try:
                 page.wait_for_selector(
                     '[data-test="branded-price-whole-value"]:text-matches("[0-9]")',
