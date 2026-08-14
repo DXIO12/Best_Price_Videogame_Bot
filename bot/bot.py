@@ -376,6 +376,40 @@ def _scrape_url(scraper, shop_name: str, url: str) -> float | None:
 # PARALLEL SCRAPING
 # =========================================================
 
+# Rolling per-shop scrape cost in seconds, used to schedule the slowest shops
+# first. Kept in memory only: a GUI session runs many passes in one process, so
+# it warms up after the first pass and stays warm. A restart costs one
+# unordered pass, which is the same behaviour as before this existed.
+_SHOP_DURATIONS = {}
+_DURATIONS_LOCK = threading.Lock()
+
+# Weight of the newest sample in the moving average. Low enough that one slow
+# page (a timeout, a hiccup) does not dominate, high enough to track a shop
+# that has genuinely got slower.
+_DURATION_SMOOTHING = 0.3
+
+
+def _record_duration(shop_key: str, seconds: float) -> None:
+    """Fold one scrape's duration into that shop's moving average."""
+    with _DURATIONS_LOCK:
+        previous = _SHOP_DURATIONS.get(shop_key)
+        _SHOP_DURATIONS[shop_key] = seconds if previous is None else (
+            previous * (1 - _DURATION_SMOOTHING) + seconds * _DURATION_SMOOTHING
+        )
+
+
+def _bucket_cost(shop_key: str, job_count: int) -> float:
+    """Estimated seconds to work through a whole bucket.
+
+    A shop we have never timed sorts first (infinite cost). Discovering a slow
+    shop late is exactly what wrecks the makespan, so unknowns are treated as
+    expensive until proven otherwise."""
+    with _DURATIONS_LOCK:
+        average = _SHOP_DURATIONS.get(shop_key)
+
+    return float("inf") if average is None else average * job_count
+
+
 def _parallel_line(done: int, total: int, shop_name: str, product_name: str,
                    price: float | None, error: str | None, shop_width: int) -> str:
     """One self-contained log line for a finished parallel scrape.
@@ -439,8 +473,15 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
             print(line)
         return {}
 
+    # Longest bucket first (LPT). With more shops than workers, the makespan is
+    # decided by how buckets pair up on a worker, not by their total cost — two
+    # slow shops landing together at the end is the worst case, and starting
+    # with the slowest avoids it. Estimates come from previous passes, so the
+    # first pass of a session runs in the original (arbitrary) order.
     pending = queue.Queue()
-    for shop_key, jobs in buckets.items():
+    for shop_key, jobs in sorted(
+        buckets.items(), key=lambda item: -_bucket_cost(item[0], len(item[1]))
+    ):
         pending.put((shop_key, jobs))
 
     total = sum(len(jobs) for jobs in buckets.values())
@@ -462,7 +503,9 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
                     if stop_event is not None and stop_event.is_set():
                         break
 
+                    job_started = time.monotonic()
                     price, error = _run_scraper(scraper, url)
+                    _record_duration(shop_key, time.monotonic() - job_started)
 
                     # Recording and logging share the lock: it keeps the progress
                     # counter consistent with the line it appears on, and stops
