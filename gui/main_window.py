@@ -314,7 +314,7 @@ class MainWindow(QWidget):
         self.product_table.cellDoubleClicked.connect(self.on_row_double_clicked)
         # Grey instead of the default blue for the row being dragged/selected.
         self.product_table.setStyleSheet(
-            "QTableWidget::item:selected { background-color: #6e6e6e; color: white; }"
+            "QTableWidget::item:selected { background-color: #47474e; color: white; }"
         )
 
 
