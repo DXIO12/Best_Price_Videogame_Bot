@@ -11,8 +11,11 @@ def get_wakkap_price(url):
             # than the old fixed wait did. Scoped to the product summary for the
             # same reason the extraction below is. On timeout we fall through
             # and let that extraction fail exactly as it used to.
+            # `:has-text` is deliberate — the node can be in the DOM before its
+            # text is filled in, so waiting for the bare element races the
+            # render on a busy machine.
             try:
-                page.wait_for_selector(".cmp-item-summary .price-value",
+                page.wait_for_selector(".cmp-item-summary .price-value:has-text('€')",
                                        state="attached", timeout=10000)
             except Exception:
                 pass

@@ -16,10 +16,13 @@ MAIN_PRICE_CONTAINERS = [
     '#priceblock_ourprice',
 ]
 
-# Any price node inside the main-price region. Used to wait for the page to
-# actually render its price instead of sleeping a fixed amount.
+# Any price node inside the main-price region that already holds a price. Used
+# to wait for the page to actually render instead of sleeping a fixed amount.
+# The `:has-text` is deliberate: these nodes can be in the DOM before their text
+# is filled in, and waiting for the bare element lets the extraction run against
+# an empty node — a race that only shows up on a busy machine.
 MAIN_PRICE_SELECTOR = ", ".join(
-    f"{container} .a-price" for container in MAIN_PRICE_CONTAINERS
+    f"{container} .a-price:has-text('€')" for container in MAIN_PRICE_CONTAINERS
 )
 
 

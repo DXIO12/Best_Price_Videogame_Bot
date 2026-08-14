@@ -12,7 +12,9 @@ SELECTORS = [
     '[class*="price-sale"]',
 ]
 
-PRICE_SELECTOR = ", ".join(SELECTORS)
+# `:has-text` is deliberate — these nodes can be in the DOM before their text is
+# filled in, so waiting for the bare element races the render on a busy machine.
+PRICE_SELECTOR = ", ".join(f"{selector}:has-text('€')" for selector in SELECTORS)
 
 
 def get_elcorteingles_price(url):

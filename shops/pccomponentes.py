@@ -10,9 +10,15 @@ def get_pccomponentes_price(url):
             # continues as soon as it appears and still tolerates a slower page
             # than the old fixed wait did. On timeout we fall through and let
             # the extraction below fail exactly as it used to.
+            # `:text-matches` is deliberate — this node holds digits (no "€")
+            # and can be in the DOM before they are filled in, so waiting for
+            # the bare element races the render on a busy machine. "[0-9]" and
+            # not "\d": Playwright unescapes backslashes inside the selector
+            # string, so "\d" silently becomes a literal "d" and never matches.
             try:
-                page.wait_for_selector("#pdp-price-current-integer",
-                                       state="attached", timeout=10000)
+                page.wait_for_selector(
+                    '#pdp-price-current-integer:text-matches("[0-9]")',
+                    state="attached", timeout=10000)
             except Exception:
                 pass
 

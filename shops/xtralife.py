@@ -9,11 +9,17 @@ def get_xtralife_price(url):
             # Wait for the price to render rather than sleeping blindly: this
             # continues as soon as it appears and still tolerates a slower page
             # than the old fixed wait did. Scoped to <product-pricing> for the
-            # same reason the extraction below is. On timeout we fall through
-            # and let that extraction fail exactly as it used to.
+            # same reason the extraction below is.
+            #
+            # The `:has-text` matters: <product-pricing> mounts empty and the
+            # price text arrives later, so waiting for the bare element let the
+            # extraction run against an unfilled node and return None — which is
+            # what happened on a machine busy with several parallel workers.
+            # On timeout we fall through and fail exactly as before.
             try:
-                page.wait_for_selector("product-pricing .tw-font-xtralife-bold",
-                                       state="attached", timeout=10000)
+                page.wait_for_selector(
+                    "product-pricing .tw-font-xtralife-bold:has-text('€')",
+                    state="attached", timeout=10000)
             except Exception:
                 pass
 
