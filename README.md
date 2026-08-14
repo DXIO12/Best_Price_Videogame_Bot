@@ -27,44 +27,54 @@ Work is split **by shop**, not by product: every URL belonging to a given shop i
 
 #### Benchmark
 
-AMD Ryzen 7 4800H (16 logical cores), 16 GB RAM with ~5.6 GB free, headless Chromium, 2 products × 8 shops = **16 product pages** per run. One run per configuration.
+AMD Ryzen 7 4800H (16 logical cores), 16 GB RAM with ~5.6 GB free, headless Chromium, 2 products × 8 shops = **16 product pages** per run.
 
-| Workers | Time | Speed-up | Prices retrieved | CPU (avg. cores busy) | Peak RAM | Chromium processes |
-| :--- | ---: | ---: | :---: | ---: | ---: | ---: |
-| 1 — sequential | 150.7 s | 1.00× | 16 / 16 ✅ | 1.27 of 16 | 1.0 GB | 19 |
-| 2 | 81.4 s | 1.85× | 16 / 16 ✅ | 2.31 of 16 | 1.6 GB | 31 |
-| 3 | 61.3 s | 2.46× | 16 / 16 ✅ | 3.42 of 16 | 2.1 GB | 41 |
-| **4 — default** | **50.7 s** | **2.97×** | **16 / 16 ✅** | **3.99 of 16** | **2.4 GB** | **49** |
-| 5 | 45.7 s | 3.30× | 16 / 16 ✅ | 4.88 of 16 | 3.0 GB | 61 |
+"Page time" is the total time spent inside scrapers, summed across workers. If a page cost the same regardless of how busy the machine is, this column would stay flat and only the wall clock would fall.
 
-*Peak RAM is the proportional set size (PSS) of the whole process tree, so pages shared between Chromium helper processes are not counted twice.*
+| Workers | Wall time | Speed-up | Page time | vs. sequential | Prices retrieved | Peak RAM |
+| :--- | ---: | ---: | ---: | ---: | :---: | ---: |
+| 1 — sequential | 89.8 s | 1.00× | 89.7 s | — | 16 / 16 ✅ | 1.0 GB |
+| 2 | 50.8 s | 1.77× | 99.7 s | +11% | 16 / 16 ✅ | 1.6 GB |
+| 3 | 45.8 s | 1.96× | 119.6 s | +33% | 16 / 16 ✅ | 2.0 GB |
+| **4 — default** | **34.0 s** | **2.65×** | **124.6 s** | **+39%** | **16 / 16 ✅** | **2.0 GB** |
+| 5 | 31.6 s | 2.85× | 143.6 s | +60% | 16 / 16 ✅ | 2.8 GB |
+
+*Peak RAM is the proportional set size (PSS) of the whole process tree, so pages shared between Chromium helper processes are not counted twice. Timings come from one back-to-back run of all five configurations; memory from a separate run of the same workload.*
+
+> **On precision:** these are live shops, and their latency drifts by tens of percent between runs minutes apart. Repeated runs of the same configuration have landed anywhere from 30 s to 54 s at 4 workers. Trust the shape of the table, not its decimals.
 
 #### Reading the numbers
 
-**Accuracy is unaffected.** All five runs returned the same 16 prices, and every value matched the sequential baseline exactly. Adding workers does not cost correctness, and no shop rate-limited or blocked us — the one-thread-per-shop rule means each site sees exactly the same request pattern it saw sequentially, just alongside other sites.
+**Accuracy is unaffected.** Every configuration returned all 16 prices, matching the sequential baseline exactly. No shop rate-limited or blocked us — the one-worker-per-shop rule means each site sees the same request pattern it saw sequentially, just alongside other sites.
 
-**Returns diminish, but not evenly.** Since RAM is the limiting resource, the useful measure of an extra worker is how much time it buys per gigabyte it costs:
+**Pages get slower as workers are added.** This is the main finding, and it explains the sub-linear speed-up entirely: at 5 workers the same 16 pages cost **60% more** total page time than they do alone. The scrapers are waiting on JavaScript rendering, and renderers from several browsers compete for CPU and memory bandwidth.
 
-| Step | Time saved | Extra RAM | Efficiency |
-| :--- | ---: | ---: | ---: |
-| 1 → 2 | −69.3 s | +0.55 GB | 126 s/GB |
-| 2 → 3 | −20.1 s | +0.50 GB | 40 s/GB |
-| 3 → 4 | −10.6 s | +0.30 GB | 35 s/GB |
-| 4 → 5 | −5.0 s | +0.60 GB | 8 s/GB |
+It is not scheduling overhead. Instrumenting a 4-worker pass end to end accounts for it precisely: browser launch 0.7 s per worker, shutdown 0.2 s, **1.0 s of overhead in total** on the critical path — the pass runs within 3% of the best possible given what the pages actually cost, and the four workers finish within 2 s of each other.
 
-The 3 → 4 step is almost as good a deal as 2 → 3, and it is the cheapest step in the table in absolute memory. The cliff is at **4 → 5**, which costs twice the RAM of the previous step to save half the time. That is where the default sits.
+**Returns diminish sharply after 4.** The 4 → 5 step buys 2.4 s of wall time while inflating page time by another 19 points and adding ~0.8 GB. Below that, each step still pays for itself.
 
-Raw per-worker efficiency still falls — 92% at 2 workers down to 66% at 5 — because the slowest shop sets a floor no amount of parallelism can cross, and the shops are not equally slow.
+**CPU is not the limit, and neither is bandwidth.** Even at 5 workers only ~4.9 of 16 cores are busy on average. Blocking images, fonts and media was measured twice — sequentially (79.9 s → 84.3 s) and under 4-worker contention (30.6 s → 37.4 s) — and made things **worse** both times: intercepting every request costs more than the bytes it saves.
 
-**CPU is never the bottleneck.** Total CPU time stays roughly flat (192 s sequential vs 223 s at 5 workers) — the same work is simply compressed into less wall time. Even at 5 workers, only ~4.9 of 16 cores were busy on average; the scrapers spend their time waiting on fixed render delays and network, not computing.
-
-**RAM is the real cost.** Roughly **0.5 GB per worker**. Free memory on the test machine went from 4.9 GB down to 3.5 GB at 5 workers. This is the number to watch if you raise the setting — though the gap between 3 and 4 workers is only 0.2 GB of actually-available memory.
+**RAM is the practical ceiling.** Roughly 0.5 GB per worker. Watch this if you raise the setting on a machine with less than 4 GB free.
 
 #### Recommendation
 
-**4 workers** is the default: it captures a 2.97× speed-up for 2.4 GB, and it is the last step where an extra worker still pays for its memory. A fifth worker saves 5 more seconds for 0.6 GB, which is not a trade worth making.
+**4 workers** is the default: it captures a 2.65× speed-up, and it is the last step where an extra worker clearly pays for what it costs in both memory and page-time inflation.
 
 Drop to 2–3 if you have less than 4 GB of free RAM while the bot runs, or if you run it alongside memory-hungry applications. There is no need to lower it when tracking few shops — the worker count is capped automatically by the number of distinct shops in the check.
+
+---
+
+### Scraper Waits
+
+Each scraper waits for the **price element itself** to render (`wait_for_selector`) rather than sleeping a fixed number of seconds. This is both faster and more reliable than the blind sleep it replaced: it continues as soon as the price is on the page, and its budget is set at or above the old sleep, so a genuinely slow page still gets more time than before. Removing those sleeps cut a sequential 8-shop pass from 79.9 s to 50.4 s.
+
+Two rules when changing a price selector, both learned the hard way:
+
+* **Wait for content, not just the element.** Several shops mount an empty price node and fill it in later; waiting for the bare node lets the scraper read nothing and return "no price". Every selector requires the text too — `:has-text('€')`, or `:text-matches("[0-9]")` where the node holds bare digits.
+* **`:text-matches` only matches the smallest element containing the text.** If the price is split across a child span, it will never match the outer node — and since the waits are wrapped in `try/except`, that failure is silent and simply burns the whole timeout. Use `:has-text`, which searches descendants.
+
+`project_tests/test_wait_selectors.py` pins both rules against markup copied from the live pages.
 
 ---
 
