@@ -1,6 +1,7 @@
 import os
 import queue
 import threading
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -206,7 +207,10 @@ def check_prices(stop_event=None):
         prices = None
         if settings["allow_parallel_scraping"]:
             prices = _scrape_parallel(
-                records_by_product, settings["max_parallel_workers"], stop_event
+                records_by_product,
+                {product.id: product.name for product in products},
+                settings["max_parallel_workers"],
+                stop_event,
             )
 
         for product in products:
@@ -340,28 +344,64 @@ def _scrape(record: ProductShop, prices: dict | None = None) -> float | None:
     return _scrape_url(scraper, record.shop, record.url)
 
 
-def _scrape_url(scraper, shop_name: str, url: str) -> float | None:
-    """Run a scraper against a URL. Never raises — returns None on failure.
+def _run_scraper(scraper, url: str) -> tuple:
+    """Call a scraper without printing anything. Returns (price, error_message).
 
-    Takes plain values rather than a ProductShop so it can be called from the
-    parallel workers, where no ORM object may cross the thread boundary."""
+    Silent so each mode can narrate the result its own way: the sequential path
+    tells a running story, the parallel one emits a single self-contained line."""
     try:
-        print(f"  Scraping {shop_name}...")
-        price = scraper(url)
-        print(f"  {shop_name}: {price}€" if price is not None
-              else f"  {shop_name}: could not retrieve price.")
-        return price
+        return scraper(url), None
     except Exception as e:
-        print(f"  Error scraping {shop_name}: {e}")
+        return None, str(e)
+
+
+def _scrape_url(scraper, shop_name: str, url: str) -> float | None:
+    """Sequential path: scrape one URL, narrating it as it goes.
+
+    Takes plain values rather than a ProductShop so the shop name can be used
+    for the log lines without touching the ORM."""
+    print(f"  Scraping {shop_name}...")
+    price, error = _run_scraper(scraper, url)
+
+    if error is not None:
+        print(f"  Error scraping {shop_name}: {error}")
         return None
+
+    print(f"  {shop_name}: {price}€" if price is not None
+          else f"  {shop_name}: could not retrieve price.")
+    return price
 
 
 # =========================================================
 # PARALLEL SCRAPING
 # =========================================================
 
-def _scrape_parallel(records_by_product: dict, max_workers: int,
-                     stop_event=None) -> dict:
+def _parallel_line(done: int, total: int, shop_name: str, product_name: str,
+                   price: float | None, error: str | None, shop_width: int) -> str:
+    """One self-contained log line for a finished parallel scrape.
+
+    Workers finish in unpredictable order, so a line may not name its product
+    anywhere else — unlike the sequential log, which prints a product header and
+    then narrates its shops underneath. Everything needed to read the line is
+    therefore on the line itself, and it is emitted as a single string so it can
+    be written atomically."""
+    if error is not None:
+        status = "ERROR"
+        # Playwright errors are multi-line essays; the first line is the useful bit.
+        suffix = f"  ({error.splitlines()[0][:70]})"
+    elif price is None:
+        status = "no price"
+        suffix = ""
+    else:
+        status = f"{price:.2f}€"
+        suffix = ""
+
+    counter = f"{done:>{len(str(total))}}/{total}"
+    return f"  [{counter}] {shop_name:<{shop_width}}  {status:>9}  {product_name}{suffix}"
+
+
+def _scrape_parallel(records_by_product: dict, product_names: dict,
+                     max_workers: int, stop_event=None) -> dict:
     """Scrape every product×shop pair concurrently. Returns {shop_record_id: price}.
 
     Jobs are bucketed **by shop** and each bucket is handled start-to-finish by a
@@ -376,28 +416,35 @@ def _scrape_parallel(records_by_product: dict, max_workers: int,
     A record absent from the returned dict was never attempted — either it was
     filtered out below, or ``stop_event`` fired first."""
     buckets = defaultdict(list)
+    skipped = []
 
-    for shop_records in records_by_product.values():
+    for product_id, shop_records in records_by_product.items():
+        product_name = product_names.get(product_id, "?")
+
         for record in shop_records:
             shop_key = record.shop.strip().lower()
 
             if shop_key not in SHOP_FUNCTIONS:
-                print(f"  No scraper for shop '{record.shop}' — skipping.")
+                skipped.append(f"  Skipped {record.shop} for {product_name}: no scraper.")
                 continue
 
             if not record.url or not record.url.strip():
-                print(f"  No URL set for {record.shop} — skipping.")
+                skipped.append(f"  Skipped {record.shop} for {product_name}: no URL set.")
                 continue
 
-            buckets[shop_key].append((record.id, record.shop, record.url))
+            buckets[shop_key].append((record.id, record.shop, product_name, record.url))
 
     if not buckets:
+        for line in skipped:
+            print(line)
         return {}
 
     pending = queue.Queue()
     for shop_key, jobs in buckets.items():
         pending.put((shop_key, jobs))
 
+    total = sum(len(jobs) for jobs in buckets.values())
+    shop_width = max(len(shop) for jobs in buckets.values() for _, shop, _, _ in jobs)
     results = {}
     results_lock = threading.Lock()
     worker_count = max(1, min(max_workers, len(buckets)))
@@ -411,20 +458,30 @@ def _scrape_parallel(records_by_product: dict, max_workers: int,
                     break
 
                 scraper = SHOP_FUNCTIONS[shop_key]
-                for record_id, shop_name, url in jobs:
+                for record_id, shop_name, product_name, url in jobs:
                     if stop_event is not None and stop_event.is_set():
                         break
 
-                    price = _scrape_url(scraper, shop_name, url)
+                    price, error = _run_scraper(scraper, url)
+
+                    # Recording and logging share the lock: it keeps the progress
+                    # counter consistent with the line it appears on, and stops
+                    # two workers from interleaving halves of the same line.
                     with results_lock:
                         results[record_id] = price
+                        print(_parallel_line(len(results), total, shop_name,
+                                             product_name, price, error, shop_width))
         finally:
             # Closes this worker's own browsers; a driver cannot be shut down
             # from another thread.
             stop_browser()
 
-    print(f"Scraping {len(buckets)} shop(s) in parallel with {worker_count} worker(s)...")
+    print(f"\nScraping {total} page(s) across {len(buckets)} shop(s) "
+          f"with {worker_count} worker(s)...")
+    for line in skipped:
+        print(line)
 
+    started = time.monotonic()
     threads = [
         threading.Thread(target=worker, name=f"scraper-{index}", daemon=True)
         for index in range(worker_count)
@@ -433,6 +490,9 @@ def _scrape_parallel(records_by_product: dict, max_workers: int,
         thread.start()
     for thread in threads:
         thread.join()
+
+    priced = sum(1 for price in results.values() if price is not None)
+    print(f"Scraped {priced}/{total} price(s) in {time.monotonic() - started:.1f}s.")
 
     return results
 
