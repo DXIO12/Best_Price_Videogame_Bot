@@ -44,5 +44,7 @@
     }
   ],
   "repeat_notification_minutes": 60,
-  "debug_mode": false
+  "debug_mode": false,
+  "allow_parallel_scraping": true,
+  "max_parallel_workers": 4
 }
