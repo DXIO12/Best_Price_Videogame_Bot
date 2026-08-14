@@ -1,5 +1,6 @@
 from services.product_service import (
     modify_product,
+    apply_shop_changes,
     get_products,
     to_gui_names,
     get_platform_priorities,
@@ -25,6 +26,14 @@ from PyQt6.QtWidgets import (
     QHeaderView,
 )
 
+
+def _shop_button_text(records) -> str:
+    """Label for the Shops column button: every shop with ✓ (has URL) or ✖ (no URL)."""
+    if not records:
+        return "No shops"
+    return "  ".join(f"{r.shop} {'✓' if r.url else '✖'}" for r in records)
+
+
 class ModifyProductDialog(QDialog):
 
     product_modified = pyqtSignal()
@@ -37,7 +46,6 @@ class ModifyProductDialog(QDialog):
         self.resize(950, 520)
 
         self._preselect_product_id = preselect_product_id
-        self._pending_shop_changes: dict[int, dict] = {}
         self._loading = False
         self.setup_ui()
         self.load_products()
@@ -181,13 +189,7 @@ class ModifyProductDialog(QDialog):
             platform_dropdown.shops_changed.connect(lambda _sel, r=row: self._auto_check_row(r))
 
             # Col 3 — Shops button
-            records = shops_by_pid.get(pid, [])
-            if records:
-                parts = [f"{r.shop} {'✓' if r.url else '✖'}" for r in records]
-                btn_text = "  ".join(parts)
-            else:
-                btn_text = "No shops"
-            shop_btn = QPushButton(btn_text)
+            shop_btn = QPushButton(_shop_button_text(shops_by_pid.get(pid, [])))
             shop_btn.setToolTip("Click to manage shops and URLs for this product")
             shop_btn.clicked.connect(
                 lambda checked, p=pid, n=name: self.open_shop_manager(p, n)
@@ -277,7 +279,7 @@ class ModifyProductDialog(QDialog):
                     combined = list(existing_plats | new_plats)
                     existing['platforms'] = combined
 
-        if not selected_changes and not self._pending_shop_changes:
+        if not selected_changes:
             QMessageBox.warning(
                 self,
                 "No products selected",
@@ -285,19 +287,14 @@ class ModifyProductDialog(QDialog):
             )
             return
 
-        # Build confirmation text
-        changes_text = ""
-        if selected_changes:
-            changes_text += "The following product changes will be applied:\n\n"
-            for pid, changes in selected_changes.items():
-                platforms_str = ', '.join(changes['platforms']) if changes['platforms'] else "None"
-                changes_text += f"Product: {changes['name']}\n"
-                changes_text += f"Platforms: {platforms_str}\n"
-                changes_text += f"Price: {changes['price']} €\n\n"
-
-        if self._pending_shop_changes:
-            n = len(self._pending_shop_changes)
-            changes_text += f"Shop configuration changes for {n} product(s).\n"
+        # Build confirmation text. Shop edits are already saved by the Manage
+        # Shops dialog, so they never show up here.
+        changes_text = "The following product changes will be applied:\n\n"
+        for pid, changes in selected_changes.items():
+            platforms_str = ', '.join(changes['platforms']) if changes['platforms'] else "None"
+            changes_text += f"Product: {changes['name']}\n"
+            changes_text += f"Platforms: {platforms_str}\n"
+            changes_text += f"Price: {changes['price']} €\n\n"
 
         confirm = QMessageBox.question(
             self,
@@ -337,39 +334,6 @@ class ModifyProductDialog(QDialog):
                     else:
                         print(f"[Modify] '{changes['name']}' — no changes detected")
 
-            if self._pending_shop_changes:
-                db = SessionLocal()
-                for pid, shop_changes in self._pending_shop_changes.items():
-                    for rid, shop in shop_changes["to_remove"]:
-                        record = db.query(ProductShop).filter(ProductShop.id == rid).first()
-                        if record:
-                            db.delete(record)
-                            print(f"[Shops] Removed '{shop}' from product {pid}")
-
-                    for rid, new_url in shop_changes["to_update"]:
-                        record = db.query(ProductShop).filter(ProductShop.id == rid).first()
-                        if record:
-                            record.url = new_url
-                            record.retry_count = 0
-                            record.next_retry_at = None
-                            status = "manual URL set" if new_url else "URL cleared (will auto-resolve)"
-                            print(f"[Shops] '{record.shop}' on product {pid}: {status}")
-
-                    for shop_info in shop_changes["to_add"]:
-                        new_record = ProductShop(
-                            product_id=pid,
-                            shop=shop_info["shop"],
-                            url=shop_info["url"],
-                            retry_count=0,
-                        )
-                        db.add(new_record)
-                        print(f"[Shops] Added '{shop_info['shop']}' to product {pid}"
-                              + (" with manual URL" if shop_info["url"] else " (will auto-resolve)"))
-
-                db.commit()
-                db.close()
-                self._pending_shop_changes.clear()
-
             self.load_products()
             QMessageBox.information(self, "Success", "Products updated successfully.")
             self.product_modified.emit()
@@ -382,21 +346,33 @@ class ModifyProductDialog(QDialog):
     def open_shop_manager(self, product_id: int, product_name: str):
         dialog = ShopManagerDialog(product_id, product_name, parent=self)
         dialog.exec()
-        if dialog.pending_changes is not None:
-            self._pending_shop_changes[product_id] = dialog.pending_changes
-            self._mark_shop_button_pending(product_id)
+        if dialog.changes_applied:
+            # Already written to the DB by the dialog: just resync what is shown
+            # here and in the main window. The row's 'Modify' checkbox is left
+            # alone — there is nothing left for Apply Changes to do.
+            self._refresh_shop_button(product_id)
+            self.product_modified.emit()
 
-    def _mark_shop_button_pending(self, product_id: int):
+    def _refresh_shop_button(self, product_id: int):
+        """Re-read one product's shops and relabel its Shops button.
+
+        Only that button is touched: reloading the whole table would throw away
+        the name/platform/price edits the user has not applied yet."""
+        db = SessionLocal()
+        records = db.query(ProductShop).filter(
+            ProductShop.product_id == product_id
+        ).all()
+        db.close()
+
+        text = _shop_button_text(records)
+
         for row in range(self.product_table.rowCount()):
             checkbox_widget = self.product_table.cellWidget(row, 0)
             checkbox = checkbox_widget.findChild(QCheckBox) if checkbox_widget else None
             if checkbox and checkbox.property("product_id") == product_id:
-                self._auto_check_row(row)
                 btn = self.product_table.cellWidget(row, 3)
-                if btn and isinstance(btn, QPushButton):
-                    text = btn.text()
-                    if not text.startswith("* "):
-                        btn.setText("* " + text)
+                if isinstance(btn, QPushButton):
+                    btn.setText(text)
 
 
 # =============================================================
@@ -408,7 +384,8 @@ class ShopManagerDialog(QDialog):
     Dialog to manage shops and URLs for a single product.
     - Checkbox per shop: check to include, uncheck to remove.
     - URL field: editable — manual URL takes priority over the auto-resolver.
-    - Warns before overwriting any existing non-empty URL.
+    - Confirm summarises every change and, once accepted, saves it straight to
+      the DB, so Apply Changes never asks about shops again.
     """
 
     def __init__(self, product_id: int, product_name: str, parent=None):
@@ -416,7 +393,7 @@ class ShopManagerDialog(QDialog):
         self.product_id = product_id
         self.setWindowTitle(f"Manage Shops — {product_name}")
         self.resize(660, 400)
-        self.pending_changes = None
+        self.changes_applied = False
         self._load_data()
         self._setup_ui()
 
@@ -527,11 +504,16 @@ class ShopManagerDialog(QDialog):
     # Save logic
     # ---------------------------------------------------------
 
-    def _on_confirm(self):
+    def _collect_changes(self):
+        """Diff the table against the DB state loaded when the dialog opened.
+
+        Returns (to_add, to_remove, to_update, summary_lines) — the first three
+        in the shape apply_shop_changes() expects, the last one describing every
+        change for the confirmation dialog."""
         to_add = []
         to_remove = []
         to_update = []
-        overwrite_warnings = []
+        summary = []
 
         for info in self._row_data:
             enabled = info["checkbox"].isChecked()
@@ -543,40 +525,46 @@ class ShopManagerDialog(QDialog):
 
             if enabled and not was_enabled:
                 to_add.append({"shop": shop, "url": new_url})
+                summary.append(
+                    f"  • {shop}: shop added "
+                    + ("with a manual URL" if new_url else "(auto-resolver will search)")
+                )
 
             elif not enabled and was_enabled:
                 to_remove.append((rid, shop))
+                summary.append(f"  • {shop}: shop removed")
 
             elif enabled and was_enabled and new_url != old_url:
-                if old_url:
-                    overwrite_warnings.append(
-                        f"  • {shop}: existing URL will be "
-                        + ("replaced with a new manual URL" if new_url
-                           else "cleared (auto-resolver will search again)")
-                    )
                 to_update.append((rid, new_url))
+                if not new_url:
+                    detail = "URL cleared (auto-resolver will search again)"
+                elif old_url:
+                    detail = "existing URL replaced with a new manual URL"
+                else:
+                    detail = "manual URL set"
+                summary.append(f"  • {shop}: {detail}")
+
+        return to_add, to_remove, to_update, summary
+
+    def _on_confirm(self):
+        to_add, to_remove, to_update, summary = self._collect_changes()
 
         if not to_add and not to_remove and not to_update:
-            self.accept()
+            self.reject()
             return
 
-        if overwrite_warnings:
-            msg = (
-                "The following URLs will be overwritten:\n\n"
-                + "\n".join(overwrite_warnings)
-                + "\n\nDo you want to continue?"
-            )
-            confirm = QMessageBox.question(
-                self, "Overwrite URLs", msg,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Shop Changes",
+            "The following shop changes will be applied:\n\n"
+            + "\n".join(summary)
+            + "\n\nDo you want to continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
 
-        self.pending_changes = {
-            "to_add": to_add,
-            "to_remove": to_remove,
-            "to_update": to_update,
-        }
+        apply_shop_changes(self.product_id, to_add, to_remove, to_update)
+        self.changes_applied = True
         self.accept()

@@ -263,3 +263,43 @@ def modify_product(product_id, new_platforms, new_name=None, new_target_price=No
 
     db.commit()
     db.close()
+
+
+def apply_shop_changes(product_id, to_add, to_remove, to_update):
+    """
+    Persist the shop edits made in the Manage Shops dialog for one product.
+
+    to_add:    [{"shop": str, "url": str}]        — new shops to track
+    to_remove: [(product_shop_id, shop_name)]     — shops to stop tracking
+    to_update: [(product_shop_id, new_url)]       — URL changes ("" = auto-resolve again)
+    """
+    db = SessionLocal()
+
+    for record_id, shop in to_remove:
+        record = db.query(ProductShop).filter(ProductShop.id == record_id).first()
+        if record:
+            db.delete(record)
+            print(f"[Shops] Removed '{shop}' from product {product_id}")
+
+    for record_id, new_url in to_update:
+        record = db.query(ProductShop).filter(ProductShop.id == record_id).first()
+        if record:
+            record.url = new_url
+            # The retry schedule belongs to the old URL, so it starts over.
+            record.retry_count = 0
+            record.next_retry_at = None
+            status = "manual URL set" if new_url else "URL cleared (will auto-resolve)"
+            print(f"[Shops] '{record.shop}' on product {product_id}: {status}")
+
+    for shop_info in to_add:
+        db.add(ProductShop(
+            product_id=product_id,
+            shop=shop_info["shop"],
+            url=shop_info["url"],
+            retry_count=0,
+        ))
+        print(f"[Shops] Added '{shop_info['shop']}' to product {product_id}"
+              + (" with manual URL" if shop_info["url"] else " (will auto-resolve)"))
+
+    db.commit()
+    db.close()
