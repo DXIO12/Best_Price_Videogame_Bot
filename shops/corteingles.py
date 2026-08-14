@@ -2,11 +2,32 @@ from shops.playwright_utils import chromium_page
 from shops.price_utils import extract_price
 
 
+# HTML structure:
+#   span.price-sale            → "49,90 €"  ← current sale price (we want)
+#   span.price-unit--original  → "79,90 €"  ← crossed-out original price
+#   span.price-discount        → "37%"
+SELECTORS = [
+    'span.price-sale',
+    '[aria-label="Precio de venta"]',
+    '[class*="price-sale"]',
+]
+
+PRICE_SELECTOR = ", ".join(SELECTORS)
+
+
 def get_elcorteingles_price(url):
 
     try:
         with chromium_page(url) as page:
-            page.wait_for_timeout(8000)
+            # Wait for the price to render rather than sleeping blindly: this
+            # continues as soon as it appears and still tolerates a slower page
+            # than the old fixed wait did. On timeout we fall through to the
+            # extraction loop, which fails the same way it used to.
+            try:
+                page.wait_for_selector(PRICE_SELECTOR, state="attached",
+                                       timeout=12000)
+            except Exception:
+                pass
 
             # Accept cookies
             try:
@@ -14,16 +35,6 @@ def get_elcorteingles_price(url):
                 page.wait_for_timeout(1000)
             except Exception:
                 pass
-
-            # HTML structure:
-            #   span.price-sale            → "49,90 €"  ← current sale price (we want)
-            #   span.price-unit--original  → "79,90 €"  ← crossed-out original price
-            #   span.price-discount        → "37%"
-            SELECTORS = [
-                'span.price-sale',
-                '[aria-label="Precio de venta"]',
-                '[class*="price-sale"]',
-            ]
 
             price_text = None
 
