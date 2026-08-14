@@ -1,5 +1,5 @@
 {
-  "check_interval_minutes": 15,
+  "check_interval_minutes": 30,
   "notify_only_best_price": false,
   "repeat_notifications": true,
   "repeat_notification_hours": 3,
@@ -44,5 +44,5 @@
     }
   ],
   "repeat_notification_minutes": 60,
-  "debug_mode": true
+  "debug_mode": false
 }
