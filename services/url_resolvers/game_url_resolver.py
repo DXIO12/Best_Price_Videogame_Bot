@@ -4,9 +4,48 @@ import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 from config.runtime_config import resolve_headless
+from shops.price_utils import extract_price
 from urllib.parse import unquote_plus
 
 BASE_URL = "https://www.game.es"
+
+# The main buy box, and the only node on the page that identifies it. A product
+# page carries exactly one `[data-quick-container]` but 9-11 `.buy--price`
+# nodes — the rest belong to the "Productos relacionados" carousels. Scoping
+# every read to this container is the same defence amazon.py's
+# MAIN_PRICE_CONTAINERS provides: a product with no price of its own must return
+# None, never a neighbouring product's price.
+QUICK_CONTAINER = "[data-quick-container]"
+
+# A pre-order page adds `buy-reserve` to that container. Its `.buy--price` then
+# holds the RESERVATION DEPOSIT, not the price — 3'00 € for a game whose real
+# web price is 39,99 €. This class is the only reliable discriminator: the
+# "RESERVAR" label (`.buy--type`) also appears elsewhere on a released page.
+RESERVE_CONTAINER = f"{QUICK_CONTAINER}.buy-reserve"
+
+# Wait for the price to carry its text, not just for the node to exist
+# (README § "Scraper Waits"). `:has-text` and NOT `:text-matches`: the amount is
+# split across `.int` / `.decimal` / `.currency` children, and `:text-matches`
+# only matches the *smallest* element holding the text, so it would never match
+# the outer node and would silently burn the whole timeout.
+PRICE_SELECTOR = f"{QUICK_CONTAINER} .buy--price:has-text('€')"
+
+# On a reserve page the real price lives in `.buy--info` as "PVP WEB : 39.99 €".
+# `.buy--info` exists on released pages too, holding "Llévate 420 puntos GAME" —
+# so the PVP text is required, never the bare node, or a released product would
+# report 420.
+PVP_WEB_PATTERN = re.compile(r"PVP\s*WEB\s*:?\s*([\d.,]+)", re.IGNORECASE)
+
+# `.int` nests a <small> with the crossed-out original price. Reading only the
+# direct text nodes drops it without depending on how inner_text() happens to
+# break lines, and without the IndexError an empty node would raise.
+_OWN_TEXT_JS = """el => {
+    let text = '';
+    for (const node of el.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
+    }
+    return text.trim();
+}"""
 
 USED_KEYWORDS = {"segunda mano", "seminuevo", "usado", "reacondicionado", "segunda-mano"}
 DIGITAL_KEYWORDS = {"prepago", "prepagos", "digital", "descarga"}
@@ -48,27 +87,69 @@ def _matches_platform(href: str, slug: str) -> bool:
     return slug in [seg for seg in href.split("?")[0].split("/") if seg]
 
 
-def _read_game_price(page) -> float | None:
-    """Read the new price from a game.es product page."""
-    try:
-        buy_price = page.locator(".buy--price").first
-        int_part = buy_price.locator(".int").evaluate(
-            """el => {
-                let text = '';
-                for (const node of el.childNodes) {
-                    if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
-                }
-                return text.trim();
-            }"""
-        )
-        decimal_part = buy_price.locator(".decimal").inner_text().strip()
-        decimal_part = decimal_part.lstrip("'").lstrip(",").lstrip(".").strip()
-        if not int_part:
-            return None
-        price_str = f"{int_part}.{decimal_part}" if decimal_part else int_part
-        return float(price_str.replace(",", "."))
-    except Exception:
+def _read_pvp_web(container) -> float | None:
+    """The official web price from a pre-order page's `.buy--info` line."""
+    info = container.locator(".buy--info")
+    if info.count() == 0:
         return None
+
+    # text_content(), not inner_text(): the container renders a second, hidden
+    # copy of the buy box for narrow viewports, and inner_text() returns "" for
+    # a hidden node. The pattern tolerates the raw node's newlines and padding.
+    match = PVP_WEB_PATTERN.search(info.first.text_content(timeout=5000) or "")
+    if not match:
+        return None
+
+    return extract_price(match.group(1))
+
+
+def _read_buy_price(container) -> float | None:
+    """The price from the `.buy--price` block of a normal, on-sale page."""
+    buy_price = container.locator(".buy--price").first
+    if buy_price.count() == 0:
+        return None
+
+    integer = buy_price.locator(".int")
+    if integer.count() == 0:
+        return None
+
+    int_part = integer.first.evaluate(_OWN_TEXT_JS)
+    if not int_part:
+        return None
+
+    decimal = buy_price.locator(".decimal")
+    decimal_part = ""
+    if decimal.count() > 0:
+        # decimal_part is "'99" — strip the apostrophe separator. text_content()
+        # for the same hidden-copy reason as above; dropping the decimals
+        # silently would report 69 € for a 69,99 € game.
+        decimal_part = (decimal.first.text_content(timeout=5000) or "").strip()
+        decimal_part = decimal_part.lstrip("'").lstrip(",").lstrip(".").strip()
+
+    price_str = f"{int_part}.{decimal_part}" if decimal_part else int_part
+
+    return extract_price(price_str)
+
+
+def read_game_price(page) -> float | None:
+    """Read the current price from an already-loaded game.es product page.
+
+    Shared with shops/game.py so the resolver's cheapest-wins tie-break compares
+    the same number the scraper will later store — it used to read the
+    reservation deposit, which undercuts every real price and made pre-order
+    listings win the tie-break outright.
+    """
+    container = page.locator(QUICK_CONTAINER).first
+    if container.count() == 0:
+        return None
+
+    if page.locator(RESERVE_CONTAINER).count() > 0:
+        # `.buy--price` is the deposit here, so a reserve page with no readable
+        # PVP WEB has no price to report. Returning None (product shows as
+        # unavailable) beats reporting a 3 € deposit as if it were the price.
+        return _read_pvp_web(container)
+
+    return _read_buy_price(container)
 
 
 def resolve_game_product_url(search_url: str, platform: str | None = None):
@@ -178,7 +259,11 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
             print(f"[Game] Resolved (single top): {result}")
             return result
 
-        # Step 3 — visit each top candidate and read its price; pick cheapest
+        # Step 3 — visit each top candidate and read its price; pick cheapest.
+        # This only works because read_game_price() reports a pre-order page's
+        # real PVP WEB rather than its reservation deposit: a 3,00 € deposit
+        # undercuts every genuine price, so reserve listings used to win the
+        # tie-break outright (see the 007 First Light bug in docs/AI/handoff.md).
         best_href = None
         best_price = float("inf")
 
@@ -186,8 +271,11 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
             full_url = href if href.startswith("http") else f"{BASE_URL}{href}"
             try:
                 page.goto(full_url, wait_until="domcontentloaded")
-                page.wait_for_timeout(4000)
-                price = _read_game_price(page)
+                try:
+                    page.wait_for_selector(PRICE_SELECTOR, state="attached", timeout=10000)
+                except PlaywrightTimeout:
+                    pass
+                price = read_game_price(page)
                 if price is not None and price < best_price:
                     best_price = price
                     best_href = full_url
