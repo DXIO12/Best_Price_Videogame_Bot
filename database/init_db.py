@@ -13,6 +13,8 @@ with engine.connect() as conn:
         "ALTER TABLE product_shops ADD COLUMN available BOOLEAN",
         "ALTER TABLE settings ADD COLUMN repeat_notification_minutes INTEGER",
         "ALTER TABLE settings ADD COLUMN debug_mode BOOLEAN",
+        "ALTER TABLE settings ADD COLUMN allow_parallel_scraping BOOLEAN",
+        "ALTER TABLE settings ADD COLUMN max_parallel_workers INTEGER",
         "ALTER TABLE product_platforms ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     ]:
         try:

@@ -70,6 +70,14 @@ class Setting(Base):
     # the frozen-executable default in runtime_config.get_debug_mode().
     debug_mode = Column(Boolean)
 
+    # Scrape several shops at once instead of one after another.
+    # None → treated as False (sequential, the original behaviour).
+    allow_parallel_scraping = Column(Boolean)
+
+    # Worker threads used when allow_parallel_scraping is on. Each one launches
+    # its own browser, so this caps both concurrency and memory use.
+    max_parallel_workers = Column(Integer)
+
 
 class Product(Base):
 

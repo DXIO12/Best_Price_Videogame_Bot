@@ -22,6 +22,8 @@ DEFAULTS = {
     "notify_only_best_price": False,
     "repeat_notifications": True,
     "repeat_notification_minutes": 90,
+    "allow_parallel_scraping": False,
+    "max_parallel_workers": 3,
     "debug_mode": True,
 }
 
@@ -44,6 +46,21 @@ _TOOLTIPS = {
         "Only active when 'Repeat notifications' is ON.\n"
         "Default: 90 min."
     ),
+    "allow_parallel_scraping": (
+        "ON  → Several shops are scraped at the same time, so a full check\n"
+        "      takes about as long as the slowest shop instead of the sum\n"
+        "      of them all.\n"
+        "OFF → One shop after another (original behaviour).\n"
+        "Each shop is still visited by a single worker, so no site ever\n"
+        "receives two simultaneous requests."
+    ),
+    "max_parallel_workers": (
+        "How many shops are scraped at the same time.\n"
+        "Only active when 'Parallel scraping' is ON.\n"
+        "Each worker launches its OWN browser: RAM use is multiplied by this\n"
+        "number, and with Debug mode ON you will see this many browser\n"
+        "windows open at once. Default: 3."
+    ),
     "debug_mode": (
         "ON  → Visible browser windows while scraping + a console with logs.\n"
         "OFF → Headless scraping in the background (Release mode).\n"
@@ -61,7 +78,7 @@ class SettingsBotDialog(QDialog):
         super().__init__(parent)
         self.auto_start = auto_start
         self.setWindowTitle("Settings Bot")
-        self.resize(440, 260)
+        self.resize(440, 330)
         self._load_data()
         self._setup_ui()
 
@@ -158,6 +175,32 @@ class SettingsBotDialog(QDialog):
             self._repeat_spin,
         )
 
+        # allow_parallel_scraping
+        self._parallel_chk = QCheckBox()
+        self._parallel_chk.setChecked(
+            s.allow_parallel_scraping if s and s.allow_parallel_scraping is not None
+            else DEFAULTS["allow_parallel_scraping"]
+        )
+        form.addRow(
+            self._label_widget("allow_parallel_scraping", "Parallel scraping"),
+            self._parallel_chk,
+        )
+
+        # max_parallel_workers (enabled only when allow_parallel_scraping is ON)
+        self._workers_spin = QSpinBox()
+        self._workers_spin.setRange(2, 8)
+        self._workers_spin.setSuffix(" shops at once")
+        self._workers_spin.setValue(
+            s.max_parallel_workers if s and s.max_parallel_workers
+            else DEFAULTS["max_parallel_workers"]
+        )
+        self._workers_spin.setEnabled(self._parallel_chk.isChecked())
+        self._parallel_chk.toggled.connect(self._workers_spin.setEnabled)
+        form.addRow(
+            self._label_widget("max_parallel_workers", "Scrape in parallel:"),
+            self._workers_spin,
+        )
+
         # debug_mode (frozen-aware default when no explicit value is stored yet)
         self._debug_chk = QCheckBox()
         self._debug_chk.setChecked(
@@ -200,6 +243,8 @@ class SettingsBotDialog(QDialog):
         notify_best = self._best_price_chk.isChecked()
         repeat = self._repeat_chk.isChecked()
         repeat_mins = self._repeat_spin.value()
+        parallel = self._parallel_chk.isChecked()
+        workers = self._workers_spin.value()
         debug = self._debug_chk.isChecked()
 
         db = SessionLocal()
@@ -212,6 +257,8 @@ class SettingsBotDialog(QDialog):
         setting.notify_only_best_price = notify_best
         setting.repeat_notifications = repeat
         setting.repeat_notification_minutes = repeat_mins
+        setting.allow_parallel_scraping = parallel
+        setting.max_parallel_workers = workers
         setting.debug_mode = debug
 
         db.commit()
@@ -223,6 +270,8 @@ class SettingsBotDialog(QDialog):
             "notify_only_best_price": notify_best,
             "repeat_notifications": repeat,
             "repeat_notification_minutes": repeat_mins,
+            "allow_parallel_scraping": parallel,
+            "max_parallel_workers": workers,
             "debug_mode": debug,
         })
 
@@ -232,6 +281,9 @@ class SettingsBotDialog(QDialog):
         print(f"[Settings Bot] Repeat Notifications:    {repeat}")
         if repeat:
             print(f"[Settings Bot] Repeat After:            {repeat_mins} min")
+        print(f"[Settings Bot] Parallel Scraping:       {parallel}")
+        if parallel:
+            print(f"[Settings Bot] Parallel Workers:        {workers}")
         print(f"[Settings Bot] Debug Mode:              {debug}")
         print("===================================")
 
