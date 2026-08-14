@@ -16,6 +16,12 @@ MAIN_PRICE_CONTAINERS = [
     '#priceblock_ourprice',
 ]
 
+# Any price node inside the main-price region. Used to wait for the page to
+# actually render its price instead of sleeping a fixed amount.
+MAIN_PRICE_SELECTOR = ", ".join(
+    f"{container} .a-price" for container in MAIN_PRICE_CONTAINERS
+)
+
 
 def _extract_amazon_price_from_price_block(block) -> float | None:
     """Amazon commonly renders price as whole + decimal + fraction nodes."""
@@ -51,8 +57,16 @@ def get_amazon_price(url):
 
     try:
         with chromium_page(url) as page:
-            # Let the page fully render
-            page.wait_for_timeout(8000)
+            # Wait for the price to render rather than sleeping blindly: this
+            # continues as soon as it appears (typically well under a second)
+            # and still tolerates a slower page than the old fixed wait did.
+            # On timeout we fall through and let the extraction below decide,
+            # exactly as it used to after the sleep expired.
+            try:
+                page.wait_for_selector(MAIN_PRICE_SELECTOR, state="attached",
+                                       timeout=12000)
+            except Exception:
+                pass
 
             # Accept cookies if banner appears
             try:
