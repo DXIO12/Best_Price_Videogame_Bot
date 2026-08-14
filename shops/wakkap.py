@@ -6,7 +6,16 @@ def get_wakkap_price(url):
 
     try:
         with chromium_page(url) as page:
-            page.wait_for_timeout(5000)
+            # Wait for the price to render rather than sleeping blindly: this
+            # continues as soon as it appears and still tolerates a slower page
+            # than the old fixed wait did. Scoped to the product summary for the
+            # same reason the extraction below is. On timeout we fall through
+            # and let that extraction fail exactly as it used to.
+            try:
+                page.wait_for_selector(".cmp-item-summary .price-value",
+                                       state="attached", timeout=10000)
+            except Exception:
+                pass
 
             # Accept cookies
             try:
