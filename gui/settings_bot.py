@@ -23,7 +23,7 @@ DEFAULTS = {
     "repeat_notifications": True,
     "repeat_notification_minutes": 90,
     "allow_parallel_scraping": False,
-    "max_parallel_workers": 3,
+    "max_parallel_workers": 4,
     "debug_mode": True,
 }
 
@@ -57,9 +57,11 @@ _TOOLTIPS = {
     "max_parallel_workers": (
         "How many shops are scraped at the same time.\n"
         "Only active when 'Parallel scraping' is ON.\n"
-        "Each worker launches its OWN browser: RAM use is multiplied by this\n"
-        "number, and with Debug mode ON you will see this many browser\n"
-        "windows open at once. Default: 3."
+        "Each worker launches its OWN browser: expect roughly 0.5 GB of RAM\n"
+        "per worker, and with Debug mode ON you will see this many browser\n"
+        "windows open at once.\n"
+        "Default: 4. Going above that buys very little time for the memory\n"
+        "it costs (see the benchmark in the README)."
     ),
     "debug_mode": (
         "ON  → Visible browser windows while scraping + a console with logs.\n"

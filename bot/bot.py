@@ -51,8 +51,10 @@ SHOP_FUNCTIONS = {
 
 
 # Threads used when allow_parallel_scraping is on and the DB has no explicit
-# value. Kept low on purpose: every worker launches its own browser.
-DEFAULT_PARALLEL_WORKERS = 3
+# value. Every worker launches its own browser, so this trades RAM for wall
+# time. Benchmarked (see README): 4 workers is the last step that still pays —
+# it buys 35 s per extra GB, against only 8 s/GB for a fifth worker.
+DEFAULT_PARALLEL_WORKERS = 4
 
 
 # =========================================================
