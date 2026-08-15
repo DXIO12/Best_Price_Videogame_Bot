@@ -52,6 +52,24 @@ _EDIT_ICON_SVG = (
     b'l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>'
 )
 
+# Grey gear "settings" icon (Material "settings" glyph path), kept inline for
+# the same reason as the pencil above. Same neutral grey: the gear opens a
+# configuration panel, so it must not read as an action button.
+_SETTINGS_ICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94'
+    b'l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96'
+    b'c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84'
+    b'c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96'
+    b'c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58'
+    b'c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61'
+    b'l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54'
+    b'c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94'
+    b'l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58z'
+    b'M12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>'
+    b'</svg>'
+)
+
 
 def _render_svg_icon(svg_bytes: bytes, size: int = 64) -> QIcon:
     """Render an inline SVG to a QIcon. A QApplication must already exist."""
@@ -145,6 +163,8 @@ class MainWindow(QWidget):
 
         # Pre-rendered red pencil icon for the per-row quick-edit button.
         self._edit_icon = _render_svg_icon(_EDIT_ICON_SVG)
+        # Pre-rendered gear icon for the top-right settings button.
+        self._settings_icon = _render_svg_icon(_SETTINGS_ICON_SVG)
 
         # Re-issues the unavailable-store tooltip on an interval so it stays
         # visible for as long as the cursor rests on the ⚠ marker, instead of
@@ -182,10 +202,25 @@ class MainWindow(QWidget):
         # MAIN LAYOUT
         main_layout = QVBoxLayout()
 
-        # TITLE
+        # TITLE + SETTINGS GEAR
         title = QLabel("Game Price Tracker")
 
-        main_layout.addWidget(title)
+        # The gear groups every kind of customisation (bot behaviour and app
+        # behaviour), so it sits apart from the action buttons: top-right
+        # corner, flush with the window edge — directly above "Delete Product".
+        self.settings_bot_button = QToolButton()
+        self.settings_bot_button.setIcon(self._settings_icon)
+        self.settings_bot_button.setIconSize(QSize(22, 22))
+        self.settings_bot_button.setAutoRaise(True)
+        self.settings_bot_button.setToolTip("Settings")
+        self.settings_bot_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+        title_layout.addWidget(self.settings_bot_button)
+
+        main_layout.addLayout(title_layout)
 
         # BUTTON LAYOUT
         button_layout = QHBoxLayout()
@@ -206,11 +241,6 @@ class MainWindow(QWidget):
             "Update URLs"
         )
         self.update_urls_button.setMinimumWidth(180)
-
-        self.settings_bot_button = QPushButton(
-            "Settings Bot"
-        )
-        self.settings_bot_button.setMinimumWidth(180)
 
         self.start_bot_button = QPushButton(
             "Start Bot"
@@ -320,11 +350,10 @@ class MainWindow(QWidget):
 
         main_layout.addWidget(self.product_table)
 
-        # UPDATE URLs + SETTINGS BOT (row 1)
+        # UPDATE URLs (row 1)
         control_button_layout = QHBoxLayout()
         control_button_layout.addStretch()
         control_button_layout.addWidget(self.update_urls_button)
-        control_button_layout.addWidget(self.settings_bot_button)
         control_button_layout.addStretch()
         main_layout.addLayout(control_button_layout)
 

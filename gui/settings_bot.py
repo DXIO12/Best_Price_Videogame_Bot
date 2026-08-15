@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QMessageBox,
     QWidget,
+    QTabWidget,
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -24,7 +25,6 @@ DEFAULTS = {
     "repeat_notification_minutes": 90,
     "allow_parallel_scraping": False,
     "max_parallel_workers": 4,
-    "debug_mode": True,
 }
 
 _TOOLTIPS = {
@@ -79,8 +79,10 @@ class SettingsBotDialog(QDialog):
     def __init__(self, parent=None, auto_start: bool = False):
         super().__init__(parent)
         self.auto_start = auto_start
-        self.setWindowTitle("Settings Bot")
-        self.resize(440, 330)
+        # "Settings", not "Settings Bot": the window now also holds
+        # application-level options (debug mode, parallel scraping).
+        self.setWindowTitle("Settings")
+        self.resize(460, 270)
         self._load_data()
         self._setup_ui()
 
@@ -119,13 +121,46 @@ class SettingsBotDialog(QDialog):
         h.addStretch()
         return widget
 
-    def _setup_ui(self):
-        s = self._existing
-        layout = QVBoxLayout()
+    def _make_form_page(self):
+        """Returns (page, form) for one tab: the form on top, stretch below.
 
+        The stretch matters: without it QFormLayout spreads the leftover
+        height between its rows, so tabs with fewer controls would show
+        wider gaps than the others."""
+        page = QWidget()
+        v = QVBoxLayout(page)
         form = QFormLayout()
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(12)
+        v.addLayout(form)
+        v.addStretch()
+        return page, form
+
+    def _setup_ui(self):
+        layout = QVBoxLayout()
+
+        tabs = QTabWidget()
+        tabs.addTab(self._build_bot_tab(), "Bot")
+        tabs.addTab(self._build_app_tab(), "Application")
+        layout.addWidget(tabs)
+
+        btn_layout = QHBoxLayout()
+        save_label = "Start Bot" if self.auto_start else "Save"
+        save_btn = QPushButton(save_label)
+        cancel_btn = QPushButton("Cancel")
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        save_btn.clicked.connect(self._on_save)
+        cancel_btn.clicked.connect(self.close)
+
+        self.setLayout(layout)
+
+    def _build_bot_tab(self) -> QWidget:
+        """How the bot behaves: polling cadence and notification rules."""
+        s = self._existing
+        page, form = self._make_form_page()
 
         # check_interval_minutes
         self._interval_spin = QSpinBox()
@@ -177,6 +212,13 @@ class SettingsBotDialog(QDialog):
             self._repeat_spin,
         )
 
+        return page
+
+    def _build_app_tab(self) -> QWidget:
+        """How the app itself runs: scraping concurrency and debug mode."""
+        s = self._existing
+        page, form = self._make_form_page()
+
         # allow_parallel_scraping
         self._parallel_chk = QCheckBox()
         self._parallel_chk.setChecked(
@@ -214,33 +256,9 @@ class SettingsBotDialog(QDialog):
             self._debug_chk,
         )
 
-        layout.addLayout(form)
-        layout.addStretch()
-
-        btn_layout = QHBoxLayout()
-        save_label = "Start Bot" if self.auto_start else "Save"
-        save_btn = QPushButton(save_label)
-        cancel_btn = QPushButton("Cancel")
-        btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-        save_btn.clicked.connect(self._on_save)
-        cancel_btn.clicked.connect(self.close)
-
-        self.setLayout(layout)
+        return page
 
     def _on_save(self):
-        if self._existing is not None:
-            confirm = QMessageBox.question(
-                self, "Overwrite Settings",
-                "Settings are already configured. Overwrite them?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
-
         interval = self._interval_spin.value()
         notify_best = self._best_price_chk.isChecked()
         repeat = self._repeat_chk.isChecked()

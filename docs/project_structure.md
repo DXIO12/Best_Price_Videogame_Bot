@@ -101,7 +101,7 @@ SQLAlchemy models and DB utilities.
 | `__init__.py` | Package marker. |
 | `db.py` | Creates the SQLAlchemy engine and `SessionLocal` factory for SQLite. Uses `Path(__file__).resolve().parent` to build an absolute path to `tracker.db`, so the DB is always found regardless of the working directory. |
 | `init_db.py` | Creates all tables on first run and runs `ALTER TABLE` migrations automatically (adds `retry_count`, `next_retry_at`, `repeat_notification_minutes` if they don't exist). Safe to run multiple times. Called by all launchers before starting the app. |
-| `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (check_interval_minutes, notify_only_best_price, repeat_notifications, repeat_notification_minutes). |
+| `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (check_interval_minutes, notify_only_best_price, repeat_notifications, repeat_notification_minutes, debug_mode, allow_parallel_scraping, max_parallel_workers). |
 | `seed_platforms.py` | One-off script that inserts the default platform list into the DB. |
 
 ---
@@ -125,12 +125,12 @@ PyQt6 desktop application.
 | File | Description |
 | ------ | ----------- |
 | `__init__.py` | Package marker. |
-| `main_window.py` | Main application window. Renders the product table (Product, Platform, Target Price, Shops, Best Price). Toolbar: Add, Delete, Modify Product. Bottom row 1: Update URLs, Settings Bot. Bottom row 2: Start Bot (centered). If Start Bot is pressed without settings configured, opens Settings Bot dialog first. Drives the retry timer (`QTimer` every 5 min) and updates Shops cells incrementally as URLs resolve. |
+| `main_window.py` | Main application window. Title row: "Game Price Tracker" plus a gear `QToolButton` in the top-right corner that opens the Settings dialog (inline SVG icon, same `_render_svg_icon` pipeline as the per-row edit pencil). Renders the product table (Product, Platform, Target Price, Shops, Best Price). Toolbar: Add, Delete, Modify Product. Bottom row 1: Update URLs. Bottom row 2: Start Bot (centered). If Start Bot is pressed without settings configured, opens the Settings dialog first. Drives the retry timer (`QTimer` every 5 min) and updates Shops cells incrementally as URLs resolve. |
 | `add_product_dialog.py` | Dialog to add a new product. Lets the user pick platforms, set a target price, and either auto-resolve shop URLs or enter them manually via `ManualUrlDialog`. Prints a summary to the terminal on save. |
 | `bot_worker.py` | `QRunnable` that calls `check_prices()` from `bot.bot` in a background thread. Emits `started`, `finished`, and `error` signals to keep the GUI responsive. |
 | `delete_product_dialog.py` | Dialog to select and delete a product and all its associated `ProductShop` rows. Prints deleted product/platform info to the terminal. |
 | `modify_product_dialog.py` | Dialog to edit an existing product's name, platforms, target price, and shop configuration. Columns: Modify (checkbox), Product, Platform, Shops, Target Price. The Shops button opens `ShopManagerDialog`. Changes are staged in memory and only written to the DB when "Apply Changes" is clicked. |
-| `settings_bot.py` | `SettingsBotDialog` — configures bot behaviour: check interval, notify-only-best-price, repeat notifications, and the repeat cooldown in minutes. Each field has a circular ℹ button with a description popup. The repeat-cooldown field is disabled when repeat notifications are off. Saves to the `Setting` DB table with an overwrite warning. Supports `auto_start=True` mode (button label becomes "Save & Start Bot") used when the user launches the bot without prior configuration. |
+| `settings_bot.py` | `SettingsBotDialog` — window titled "Settings", opened from the gear button. Two tabs: **Bot** (check interval, notify-only-best-price, repeat notifications, repeat cooldown in minutes) and **Application** (parallel scraping, max parallel workers, debug mode). Each field has a circular ℹ button with a description popup. The repeat-cooldown field is disabled when repeat notifications are off, and the workers field when parallel scraping is off. Save writes all fields to the `Setting` DB table and mirrors them to `config.json`. Supports `auto_start=True` mode (button label becomes "Start Bot") used when the user launches the bot without prior configuration. |
 
 ---
 
