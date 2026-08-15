@@ -14,6 +14,8 @@ Retry schedule (applied after each failed resolution attempt):
   attempt 7 fails → exhausted, user notified via ⚠ in the GUI
 """
 
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_
@@ -50,9 +52,39 @@ RETRY_INTERVALS_MINUTES = [5, 15, 30, 60, 180, 360]
 MAX_RETRIES = len(RETRY_INTERVALS_MINUTES)  # 5 retries → 6 total attempts
 
 
+# Shop rows currently being resolved, as (product_id, shop_key) pairs.
+#
+# Several resolver workers can be in flight at once — saving a product starts
+# one for it while the "Update URLs" button starts another for every product in
+# the table, and the retry timer adds a third. Each opens its own session, so
+# they all read the same still-empty URL and scrape the same shop in parallel:
+# the product ends up resolved two or three times over, one full browser run
+# each. Claiming a row here makes the later workers skip it instead.
+_inflight_lock = threading.Lock()
+_inflight: set[tuple[int, str]] = set()
+
+
 # ─────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────
+
+@contextmanager
+def _claim(product_id: int, shop_key: str):
+    """Reserve one (product, shop) for this thread; yields False if already taken."""
+    key = (product_id, shop_key)
+
+    with _inflight_lock:
+        if key in _inflight:
+            yield False
+            return
+        _inflight.add(key)
+
+    try:
+        yield True
+    finally:
+        with _inflight_lock:
+            _inflight.discard(key)
+
 
 def _schedule_retry(record: ProductShop) -> None:
     """After a failed resolution, schedule the next retry or mark as exhausted."""
@@ -124,20 +156,37 @@ def resolve_urls_for_product(
             results[record.shop] = None
             continue
 
-        try:
-            resolved_url = resolver(search_url, platform)
-        except Exception as e:
-            print(f"[Resolver] {record.shop}: resolver error — {e}")
-            resolved_url = None
+        with _claim(product_id, shop_key) as claimed:
+            if not claimed:
+                print(f"[Resolver] {record.shop}: already being resolved, skipping.")
+                continue
 
-        if resolved_url:
-            record.url = resolved_url
-            record.retry_count = 0
-            record.next_retry_at = None
-            print(f"[Resolver] {record.shop}: ✓ {resolved_url}")
-        else:
-            print(f"[Resolver] {record.shop}: ✗ could not resolve URL")
-            _schedule_retry(record)
+            # Another worker may have finished this row between the query above
+            # and the claim, so re-read it before spending a browser run.
+            db.refresh(record)
+            if record.url and record.url.strip():
+                print(f"[Resolver] {record.shop}: resolved by another worker, skipping.")
+                continue
+
+            print(f"[Resolver] {record.shop}: resolving '{product.name}' ({platform})...")
+            try:
+                resolved_url = resolver(search_url, platform)
+            except Exception as e:
+                print(f"[Resolver] {record.shop}: resolver error — {e}")
+                resolved_url = None
+
+            if resolved_url:
+                record.url = resolved_url
+                record.retry_count = 0
+                record.next_retry_at = None
+                print(f"[Resolver] {record.shop}: ✓ {resolved_url}")
+            else:
+                print(f"[Resolver] {record.shop}: ✗ could not resolve URL")
+                _schedule_retry(record)
+
+            # Publish the result before releasing the claim, so a worker waiting
+            # on this shop sees the committed URL rather than an empty row.
+            db.commit()
 
         results[record.shop] = resolved_url
 
@@ -230,21 +279,37 @@ def _retry_single_shop(shop_record_id: int, on_progress=None):
         db.close()
         return (product.id, record.shop, None)
 
-    print(f"[Retry] {record.shop} for '{product.name}' (attempt {record.retry_count + 1})...")
-    try:
-        resolved_url = resolver(search_url, platform)
-    except Exception as e:
-        print(f"[Retry] {record.shop}: error — {e}")
-        resolved_url = None
+    # The retry timer fires on its own schedule, so it can land on a row a
+    # resolver worker is already busy with.
+    with _claim(product.id, shop_key) as claimed:
+        if not claimed:
+            print(f"[Retry] {record.shop}: already being resolved, skipping.")
+            db.close()
+            return None
 
-    if resolved_url:
-        record.url = resolved_url
-        record.retry_count = 0
-        record.next_retry_at = None
-        print(f"[Retry] {record.shop}: ✓ {resolved_url}")
-    else:
-        print(f"[Retry] {record.shop}: ✗ still not resolved")
-        _schedule_retry(record)
+        db.refresh(record)
+        if record.url and record.url.strip():
+            print(f"[Retry] {record.shop}: resolved by another worker, skipping.")
+            db.close()
+            return None
+
+        print(f"[Retry] {record.shop} for '{product.name}' (attempt {record.retry_count + 1})...")
+        try:
+            resolved_url = resolver(search_url, platform)
+        except Exception as e:
+            print(f"[Retry] {record.shop}: error — {e}")
+            resolved_url = None
+
+        if resolved_url:
+            record.url = resolved_url
+            record.retry_count = 0
+            record.next_retry_at = None
+            print(f"[Retry] {record.shop}: ✓ {resolved_url}")
+        else:
+            print(f"[Retry] {record.shop}: ✗ still not resolved")
+            _schedule_retry(record)
+
+        db.commit()
 
     product_id = product.id
     shop_name = record.shop

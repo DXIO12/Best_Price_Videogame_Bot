@@ -156,7 +156,7 @@ Business logic that sits between the GUI and the scrapers/resolvers.
 | File | Description |
 | ------ | ----------- |
 | `product_service.py` | CRUD helpers for `Product` and `ProductShop` DB rows (create, read, update, delete). |
-| `resolve_urls_service.py` | Orchestrates URL resolution for a product: iterates available shops, calls the right resolver, writes the URL to `ProductShop`, and schedules retries on failure (`retry_count`, `next_retry_at`). Also exposes `retry_due_shops()` for the periodic retry timer. |
+| `resolve_urls_service.py` | Orchestrates URL resolution for a product: iterates available shops, calls the right resolver, writes the URL to `ProductShop`, and schedules retries on failure (`retry_count`, `next_retry_at`). Also exposes `retry_due_shops()` for the periodic retry timer. Resolutions in flight are claimed in `_inflight` (guarded by `_inflight_lock`): saving a product, the "Update URLs" button and the retry timer can all target the same row at once, and without the claim each one would scrape the shop again and re-write the same URL. |
 | `resolver_worker.py` | Two `QRunnable` workers: `ResolverWorker` (first-time resolution, emits `progress` signals per shop) and `RetryWorker` (re-runs failed shops whose `next_retry_at` is due). |
 | `url_search_service.py` | Takes a product name + platform and returns a ranked list of candidate URLs across all shops. Used by `add_product_dialog.py` for search-based URL suggestions. |
 
