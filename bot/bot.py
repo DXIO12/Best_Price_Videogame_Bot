@@ -226,6 +226,7 @@ def check_prices(stop_event=None):
                 print(f"No shops configured for {name}, skipping.")
                 continue
 
+            print("===================================")
             print(f"\nProduct: {name} | Target: {target_price}€")
 
             if settings["notify_only_best_price"]:
@@ -519,8 +520,7 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
             # from another thread.
             stop_browser()
 
-    print(f"==============================================="
-          f"\nScraping {total} page(s) across {len(buckets)} shop(s) "
+    print(f"\nScraping {total} page(s) across {len(buckets)} shop(s) "
           f"with {worker_count} worker(s)..."
           f"\nTemporal log. Lines may appear out of product order due to parallelism.\n"
           f"===============================================")
