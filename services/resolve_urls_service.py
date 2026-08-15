@@ -28,6 +28,7 @@ from services.url_resolvers.amazon_url_resolver import resolve_amazon_product_ur
 from services.url_resolvers.game_url_resolver import resolve_game_product_url
 from services.url_resolvers.mediamarkt_url_resolver import resolve_mediamarkt_product_url
 from services.url_resolvers.pccomponentes_url_resolver import resolve_pccomponentes_product_url
+from services.url_resolvers.todoconsolas_url_resolver import resolve_todoconsolas_product_url
 from services.url_resolvers.wakkap_url_resolver import resolve_wakkap_product_url
 from services.url_resolvers.xtralife_url_resolver import resolve_xtralife_product_url
 
@@ -39,6 +40,7 @@ RESOLVERS = {
     "game":          resolve_game_product_url,
     "mediamarkt":    resolve_mediamarkt_product_url,
     "pccomponentes": resolve_pccomponentes_product_url,
+    "todoconsolas":  resolve_todoconsolas_product_url,
     "wakkap":        resolve_wakkap_product_url,
     "xtralife":      resolve_xtralife_product_url,
 }
