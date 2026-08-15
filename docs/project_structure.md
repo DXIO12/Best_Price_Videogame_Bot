@@ -61,6 +61,7 @@ price-bot/
 │   ├── pccomponentes.py
 │   ├── playwright_utils.py
 │   ├── price_utils.py
+│   ├── todoconsolas.py
 │   ├── wakkap.py
 │   └── xtralife.py
 │
@@ -189,6 +190,7 @@ Playwright scrapers — one per shop. Each exposes a single `get_<shop>_price(ur
 | `pccomponentes.py` | Scrapes PCComponentes.com product pages. |
 | `playwright_utils.py` | Shared Playwright helpers: `chromium_page(url)` context manager that opens a browser page with a realistic user-agent; `stop_browser()` to close the shared browser instance. |
 | `price_utils.py` | `extract_price(text)` — strips currency symbols, normalises decimal separators (`,` → `.`), and returns a `float`. |
+| `todoconsolas.py` | Scrapes TodoConsolas.com. Reads the `content` attribute of `div.current-price span[itemprop="price"]`; the scope matters because the PVPR price sits in the same block and `extract_price` keeps the last number it finds. |
 | `wakkap.py` | Scrapes Wakkap.com. Tries `.price-value.offer` (sale price) first, falls back to `.price-value` for regular price. |
 | `xtralife.py` | Scrapes Xtralife.es product pages. |
 
