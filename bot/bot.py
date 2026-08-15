@@ -18,6 +18,7 @@ from shops.wakkap import get_wakkap_price
 from shops.mediamarkt import get_mediamarkt_price
 from shops.corteingles import get_elcorteingles_price
 from shops.carrefour import get_carrefour_price
+from shops.todoconsolas import get_todoconsolas_price
 from shops.playwright_utils import stop_browser
 
 from config.runtime_config import get_debug_mode
@@ -47,7 +48,8 @@ SHOP_FUNCTIONS = {
     "wakkap": get_wakkap_price,
     "mediamarkt": get_mediamarkt_price,
     "corteingles": get_elcorteingles_price,
-    "carrefour": get_carrefour_price
+    "carrefour": get_carrefour_price,
+    "todoconsolas": get_todoconsolas_price
 }
 
 
