@@ -18,7 +18,7 @@ SHOP_SEARCH_PATTERNS = {
     "fnac": "https://www.fnac.es/SearchResult/Results.aspx?SCat=0%211&Search={query}",
     "corteingles": "https://www.elcorteingles.es/search/?query={query}",
     "mediamarkt": "https://www.mediamarkt.es/es/search.html?query={query}",
-    "todoconsolas": "https://www.todoconsolas.com/busqueda?controller=search&s={query}"
+    "todoconsolas": "https://www.todoconsolas.com/?mot_q={query}"
 }
 
 

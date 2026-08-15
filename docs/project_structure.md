@@ -48,6 +48,7 @@ price-bot/
 │       ├── game_url_resolver.py
 │       ├── mediamarkt_url_resolver.py
 │       ├── pccomponentes_url_resolver.py
+│       ├── todoconsolas_url_resolver.py
 │       ├── wakkap_url_resolver.py
 │       └── xtralife_url_resolver.py
 │
@@ -168,6 +169,7 @@ One resolver per shop. Each takes a product name and platform string, navigates 
 | `game_url_resolver.py` | Types into Game.es autocomplete, reads up to 10 results, scores by word overlap, filters second-hand listings, visits tied pages to pick the cheapest. |
 | `mediamarkt_url_resolver.py` | Searches MediaMarkt.es, presses Enter to get results page, scores product cards by name overlap. |
 | `pccomponentes_url_resolver.py` | Searches PCComponentes.com without platform in query, matches `data-product-name` attribute. |
+| `todoconsolas_url_resolver.py` | Types into the TodoConsolas.com search box, then ticks the `Regiones de juegos → PAL/ES` and `Estado → Nuevo` facets (second-hand only when no new copy is offered). Its search overlay lives in a shadow root, so every read goes through Playwright locators. Platform comes from the product URL category slug (`PLATFORM_SLUGS`), since the shop has no platform facet. |
 | `wakkap_url_resolver.py` | Searches Wakkap.com and returns the best-matching product link. |
 | `xtralife_url_resolver.py` | Navigates Xtralife.es, applies platform filter via `PLATFORM_MAP`, scores top-5 cards by word overlap. |
 
