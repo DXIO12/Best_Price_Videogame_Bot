@@ -121,7 +121,7 @@ class MainWindow(QWidget):
 
         self.setWindowTitle("Price Bot")
 
-        self.resize(1080, 600)
+        self.resize(1200, 700)
         self._center_on_screen()
 
         self.thread_pool = QThreadPool()
