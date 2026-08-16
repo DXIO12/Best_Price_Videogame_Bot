@@ -22,6 +22,9 @@
     "btn_update_urls": "Actualizar URLs",
     "btn_start_bot": "Iniciar Bot",
     "btn_stop_bot": "Detener Bot",
+    "btn_pause_bot": "Pausar Bot",
+    "btn_continue_bot": "Continuar Bot",
+    "btn_restart_bot": "Reiniciar Bot",
 
     "header_priority": "Prioridad",
     "header_product": "Producto",
@@ -65,7 +68,11 @@
     "status_bot_error": "Error del bot: {message}",
     "status_bot_stopped": "Bot detenido.",
     "status_stopping_bot": "Deteniendo el bot (terminando la comprobación actual)...",
-    "status_next_automatic": "Próxima comprobación automática en {minutes} min."
+    "status_next_automatic": "Próxima comprobación automática en {minutes} min.",
+    "status_pausing_bot": "Pausando el bot (se detendrá tras la tienda actual)...",
+    "status_bot_paused": "Bot en pausa.",
+    "status_bot_paused_remaining": "Bot en pausa — quedan {minutes} min para la próxima comprobación.",
+    "status_restarting_bot": "Reiniciando el bot (se descarta la comprobación pausada)..."
   },
 
   "settings": {

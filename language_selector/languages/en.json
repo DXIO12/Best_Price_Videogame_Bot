@@ -22,6 +22,9 @@
     "btn_update_urls": "Update URLs",
     "btn_start_bot": "Start Bot",
     "btn_stop_bot": "Stop Bot",
+    "btn_pause_bot": "Pause Bot",
+    "btn_continue_bot": "Continue Bot",
+    "btn_restart_bot": "Restart Bot",
 
     "header_priority": "Priority",
     "header_product": "Product",
@@ -65,7 +68,11 @@
     "status_bot_error": "Bot error: {message}",
     "status_bot_stopped": "Bot stopped.",
     "status_stopping_bot": "Stopping bot (finishing current check)...",
-    "status_next_automatic": "Next automatic check in {minutes} min."
+    "status_next_automatic": "Next automatic check in {minutes} min.",
+    "status_pausing_bot": "Pausing bot (holds after the current store)...",
+    "status_bot_paused": "Bot paused.",
+    "status_bot_paused_remaining": "Bot paused — {minutes} min left until the next check.",
+    "status_restarting_bot": "Restarting bot (dropping the paused check)..."
   },
 
   "settings": {
