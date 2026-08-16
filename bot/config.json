@@ -47,5 +47,5 @@
   "debug_mode": false,
   "allow_parallel_scraping": true,
   "max_parallel_workers": 4,
-  "language": "es"
+  "language": "en"
 }

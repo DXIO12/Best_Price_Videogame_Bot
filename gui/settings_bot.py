@@ -102,9 +102,15 @@ class SettingsBotDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout()
 
+        # Application first: opened from the gear, the app-wide options
+        # (language above all) are what the user came for. The exception is the
+        # auto_start flow — the dialog only appears there because the bot has no
+        # configuration yet, so it opens on Bot, where that configuration lives.
         tabs = QTabWidget()
-        tabs.addTab(self._build_bot_tab(), tr("settings.tab_bot"))
         tabs.addTab(self._build_app_tab(), tr("settings.tab_app"))
+        bot_index = tabs.addTab(self._build_bot_tab(), tr("settings.tab_bot"))
+        if self.auto_start:
+            tabs.setCurrentIndex(bot_index)
         layout.addWidget(tabs)
 
         btn_layout = QHBoxLayout()
