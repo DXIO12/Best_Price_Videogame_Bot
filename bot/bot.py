@@ -173,10 +173,36 @@ def send_notification(product_name: str, shop: str, current_price: float,
 
 
 # =========================================================
+# COOPERATIVE PAUSE / STOP CHECKPOINT
+# =========================================================
+
+def _wait_while_paused(pause_event, stop_event) -> bool:
+    """Hold here while the GUI has the bot paused.
+
+    Returns False when the pass should abandon (Stop pressed), True to carry on —
+    so it replaces the plain ``stop_event.is_set()`` test at every checkpoint.
+    The sleep runs on stop_event so pressing Stop while paused wakes this thread
+    at once instead of after the poll interval."""
+    if pause_event is None or not pause_event.is_set():
+        return stop_event is None or not stop_event.is_set()
+
+    print("Pause requested — holding at the next checkpoint.")
+
+    while pause_event.is_set():
+        if stop_event is None:
+            time.sleep(0.2)
+        elif stop_event.wait(0.2):
+            return False
+
+    print("Resuming price check.")
+    return stop_event is None or not stop_event.is_set()
+
+
+# =========================================================
 # MAIN PRICE CHECKER
 # =========================================================
 
-def check_prices(stop_event=None):
+def check_prices(stop_event=None, pause_event=None):
     print("===================================")
     print("Checking product prices...")
 
@@ -216,10 +242,11 @@ def check_prices(stop_event=None):
                 {product.id: product.name for product in products},
                 settings["max_parallel_workers"],
                 stop_event,
+                pause_event,
             )
 
         for product in products:
-            if stop_event is not None and stop_event.is_set():
+            if not _wait_while_paused(pause_event, stop_event):
                 print("Stop requested — halting price check.")
                 break
 
@@ -236,10 +263,10 @@ def check_prices(stop_event=None):
 
             if settings["notify_only_best_price"]:
                 _check_best_price(db, name, target_price, shop_records, settings,
-                                  stop_event, prices)
+                                  stop_event, prices, pause_event)
             else:
                 _check_all_shops(db, name, target_price, shop_records, settings,
-                                 stop_event, prices)
+                                 stop_event, prices, pause_event)
 
     finally:
         db.close()
@@ -255,12 +282,12 @@ def check_prices(stop_event=None):
 
 def _check_best_price(db, product_name: str, target_price: float,
                       shop_records: list, settings: dict, stop_event=None,
-                      prices: dict | None = None):
+                      prices: dict | None = None, pause_event=None):
     """Scrape all shops, then send one notification for the cheapest hit."""
     hits = []
 
     for record in shop_records:
-        if stop_event is not None and stop_event.is_set():
+        if not _wait_while_paused(pause_event, stop_event):
             break
 
         price = _scrape(record, prices)
@@ -292,10 +319,10 @@ def _check_best_price(db, product_name: str, target_price: float,
 
 def _check_all_shops(db, product_name: str, target_price: float,
                      shop_records: list, settings: dict, stop_event=None,
-                     prices: dict | None = None):
+                     prices: dict | None = None, pause_event=None):
     """Scrape each shop and notify individually for every hit."""
     for record in shop_records:
-        if stop_event is not None and stop_event.is_set():
+        if not _wait_while_paused(pause_event, stop_event):
             break
 
         price = _scrape(record, prices)
@@ -441,7 +468,7 @@ def _parallel_line(done: int, total: int, shop_name: str, product_name: str,
 
 
 def _scrape_parallel(records_by_product: dict, product_names: dict,
-                     max_workers: int, stop_event=None) -> dict:
+                     max_workers: int, stop_event=None, pause_event=None) -> dict:
     """Scrape every product×shop pair concurrently. Returns {shop_record_id: price}.
 
     Jobs are bucketed **by shop** and each bucket is handled start-to-finish by a
@@ -454,7 +481,9 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
     cross the thread boundary: the SQLAlchemy session stays with the caller.
 
     A record absent from the returned dict was never attempted — either it was
-    filtered out below, or ``stop_event`` fired first."""
+    filtered out below, or ``stop_event`` fired first. ``pause_event`` parks each
+    worker between jobs instead, so a resumed pass carries on with the jobs its
+    buckets had left rather than starting over."""
     buckets = defaultdict(list)
     skipped = []
 
@@ -498,7 +527,7 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
 
     def worker():
         try:
-            while stop_event is None or not stop_event.is_set():
+            while _wait_while_paused(pause_event, stop_event):
                 try:
                     shop_key, jobs = pending.get_nowait()
                 except queue.Empty:
@@ -506,7 +535,7 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
 
                 scraper = SHOP_FUNCTIONS[shop_key]
                 for record_id, shop_name, product_name, url in jobs:
-                    if stop_event is not None and stop_event.is_set():
+                    if not _wait_while_paused(pause_event, stop_event):
                         break
 
                     job_started = time.monotonic()

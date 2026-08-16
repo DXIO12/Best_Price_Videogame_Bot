@@ -12,16 +12,18 @@ class BotWorkerSignals(QObject):
 
 
 class BotWorker(QRunnable):
-    def __init__(self, stop_event: threading.Event | None = None):
+    def __init__(self, stop_event: threading.Event | None = None,
+                 pause_event: threading.Event | None = None):
         super().__init__()
         self.signals = BotWorkerSignals()
         self.stop_event = stop_event
+        self.pause_event = pause_event
 
     @pyqtSlot()
     def run(self):
         self.signals.started.emit()
         try:
-            check_prices(stop_event=self.stop_event)
+            check_prices(stop_event=self.stop_event, pause_event=self.pause_event)
         except Exception as error:
             self.signals.error.emit(str(error))
         finally:

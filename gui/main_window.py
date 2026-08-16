@@ -72,6 +72,34 @@ _SETTINGS_ICON_SVG = (
 )
 
 
+# Transport-control icons for the Start / Pause / Stop bot buttons (Material
+# "play_arrow", "pause", "stop" and "refresh" glyph paths), inline for the same
+# reason as the two icons above. Green marks the two "make it go" actions —
+# Start and Continue share this one. Pause, Restart and Stop stay the neutral
+# grey: red is reserved in this window for the destructive delete icon, and
+# stopping the bot destroys nothing.
+_PLAY_ICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#4caf50" d="M8 5v14l11-7z"/></svg>'
+)
+
+_PAUSE_ICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>'
+)
+
+_STOP_ICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M6 6h12v12H6z"/></svg>'
+)
+
+_RESTART_ICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M17.65 6.35A7.958 7.958 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08'
+    b'A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'
+)
+
+
 def _render_svg_icon(svg_bytes: bytes, size: int = 64) -> QIcon:
     """Render an inline SVG to a QIcon. A QApplication must already exist."""
     renderer = QSvgRenderer(QByteArray(svg_bytes))
@@ -149,6 +177,17 @@ class MainWindow(QWidget):
         self.bot_running = False
         self.bot_worker_active = False
         self.bot_stop_event = threading.Event()
+        # Set means "paused": a running pass parks at its next product/shop
+        # checkpoint and stays there until this is cleared again.
+        self.bot_pause_event = threading.Event()
+        self.bot_paused = False
+        # Countdown frozen when Pause was pressed between passes, so Continue
+        # resumes the time that was actually left instead of a whole interval.
+        self.paused_remaining_ms = 0
+        # Restart was pressed while a pass was still winding down — the relaunch
+        # waits for that pass's finished/error signal (see _reschedule_or_stop),
+        # because two BotWorkers must never scrape at the same time.
+        self.bot_restart_pending = False
         self.bot_schedule_timer = QTimer()
         self.bot_schedule_timer.setSingleShot(True)
         # PreciseTimer so remainingTime() reflects the real interval — the
@@ -166,6 +205,13 @@ class MainWindow(QWidget):
         self._edit_icon = _render_svg_icon(_EDIT_ICON_SVG)
         # Pre-rendered gear icon for the top-right settings button.
         self._settings_icon = _render_svg_icon(_SETTINGS_ICON_SVG)
+        # Pre-rendered transport icons for the bot control row. Start and
+        # Continue share the play glyph; the left button swaps to restart and
+        # the middle one to play while the bot is paused.
+        self._play_icon = _render_svg_icon(_PLAY_ICON_SVG)
+        self._pause_icon = _render_svg_icon(_PAUSE_ICON_SVG)
+        self._stop_icon = _render_svg_icon(_STOP_ICON_SVG)
+        self._restart_icon = _render_svg_icon(_RESTART_ICON_SVG)
 
         # Re-issues the unavailable-store tooltip on an interval so it stays
         # visible for as long as the cursor rests on the ⚠ marker, instead of
@@ -244,16 +290,23 @@ class MainWindow(QWidget):
         )
         self.update_urls_button.setMinimumWidth(180)
 
-        self.start_bot_button = QPushButton(
-            tr("main.btn_start_bot")
-        )
+        # Bot transport row: Start · Pause · Stop. The first two swap their icon
+        # and label depending on state (see _update_bot_buttons), which also sets
+        # every label and enabled flag below — hence no text passed here.
+        self.start_bot_button = QPushButton()
         self.start_bot_button.setMinimumWidth(180)
+        self.start_bot_button.setIconSize(QSize(16, 16))
 
-        self.stop_bot_button = QPushButton(
-            tr("main.btn_stop_bot")
-        )
+        self.pause_bot_button = QPushButton()
+        self.pause_bot_button.setMinimumWidth(180)
+        self.pause_bot_button.setIconSize(QSize(16, 16))
+
+        self.stop_bot_button = QPushButton()
         self.stop_bot_button.setMinimumWidth(180)
-        self.stop_bot_button.setEnabled(False)
+        self.stop_bot_button.setIconSize(QSize(16, 16))
+        self.stop_bot_button.setIcon(self._stop_icon)
+
+        self._update_bot_buttons()
 
         # CONNECT BUTTONS
         self.add_product_button.clicked.connect(
@@ -268,6 +321,7 @@ class MainWindow(QWidget):
         self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
         self.settings_bot_button.clicked.connect(self.open_settings_bot_dialog)
         self.start_bot_button.clicked.connect(self.start_bot_worker)
+        self.pause_bot_button.clicked.connect(self.pause_bot_worker)
         self.stop_bot_button.clicked.connect(self.stop_bot_worker)
 
         # Order: Add · Modify · Delete — "Delete" sits at the far right, away
@@ -336,10 +390,11 @@ class MainWindow(QWidget):
         control_button_layout.addStretch()
         main_layout.addLayout(control_button_layout)
 
-        # START BOT (row 2, centered)
+        # START · PAUSE · STOP BOT (row 2, centered)
         start_button_layout = QHBoxLayout()
         start_button_layout.addStretch()
         start_button_layout.addWidget(self.start_bot_button)
+        start_button_layout.addWidget(self.pause_bot_button)
         start_button_layout.addWidget(self.stop_bot_button)
         start_button_layout.addStretch()
         main_layout.addLayout(start_button_layout)
@@ -398,8 +453,9 @@ class MainWindow(QWidget):
         self.modify_product_button.setText(tr("main.btn_modify_product"))
         self.delete_product_button.setText(tr("main.btn_delete_product"))
         self.update_urls_button.setText(tr("main.btn_update_urls"))
-        self.start_bot_button.setText(tr("main.btn_start_bot"))
-        self.stop_bot_button.setText(tr("main.btn_stop_bot"))
+        # Relabels whichever variant the three bot buttons are currently showing
+        # (Start vs Restart, Pause vs Continue).
+        self._update_bot_buttons()
 
         self._retranslate_table_headers()
         # Rebuilds every cell and cell widget, which is where the per-row "＋",
@@ -966,10 +1022,46 @@ class MainWindow(QWidget):
         dialog.exec()
 
     # =========================================
-    # START BOT
+    # START / PAUSE / STOP BOT
     # =========================================
 
+    def _update_bot_buttons(self):
+        """Point the three transport buttons at the current state.
+
+        Single source of truth for their icon, label and enabled flag, so no
+        handler has to remember the full combination — and so a language change
+        can relabel them by calling this alone.
+
+        Paused is the only state where the left button does something: it turns
+        into "Restart", the escape hatch from a pass parked half-way through."""
+        if self.bot_paused:
+            self.start_bot_button.setIcon(self._restart_icon)
+            self.start_bot_button.setText(tr("main.btn_restart_bot"))
+            self.pause_bot_button.setIcon(self._play_icon)
+            self.pause_bot_button.setText(tr("main.btn_continue_bot"))
+        else:
+            self.start_bot_button.setIcon(self._play_icon)
+            self.start_bot_button.setText(tr("main.btn_start_bot"))
+            self.pause_bot_button.setIcon(self._pause_icon)
+            self.pause_bot_button.setText(tr("main.btn_pause_bot"))
+
+        self.stop_bot_button.setText(tr("main.btn_stop_bot"))
+
+        # Start stays disabled while a stopped-but-still-winding-down pass runs
+        # out; re-enabling it there would let a second BotWorker start on top of
+        # the first. Pause is meaningless once a restart is already queued.
+        self.start_bot_button.setEnabled(
+            self.bot_paused or (not self.bot_running and not self.bot_worker_active)
+        )
+        self.pause_bot_button.setEnabled(self.bot_running and not self.bot_restart_pending)
+        self.stop_bot_button.setEnabled(self.bot_running)
+
     def start_bot_worker(self):
+        # While paused this button reads "Restart", which is a different action.
+        if self.bot_paused:
+            self.restart_bot_worker()
+            return
+
         db = SessionLocal()
         setting = db.query(Setting).first()
         db.close()
@@ -986,13 +1078,15 @@ class MainWindow(QWidget):
         self.bot_running = True
         self.bot_worker_active = True
         self.bot_stop_event.clear()
+        self.bot_pause_event.clear()
+        self.bot_paused = False
+        self.paused_remaining_ms = 0
         # A pass is starting — pause the between-passes countdown.
         self.countdown_timer.stop()
-        self.start_bot_button.setEnabled(False)
-        self.stop_bot_button.setEnabled(True)
+        self._update_bot_buttons()
         self._set_status("main.status_starting_bot")
 
-        worker = BotWorker(self.bot_stop_event)
+        worker = BotWorker(self.bot_stop_event, self.bot_pause_event)
         worker.signals.started.connect(lambda: self._set_status("main.status_bot_running"))
         worker.signals.finished.connect(self.on_bot_finished)
         worker.signals.error.connect(self.on_bot_error)
@@ -1008,17 +1102,33 @@ class MainWindow(QWidget):
         Takes catalog keys rather than ready-made text so the status can be
         re-rendered later in a different language; ``kwargs`` carries anything
         the message needs that isn't translatable (an error string, say)."""
+        # Restart was pressed while this pass was still winding down. Only now,
+        # with the old worker gone for good, is it safe to launch the new one.
+        if self.bot_restart_pending:
+            self.bot_restart_pending = False
+            self.bot_stop_event.clear()
+            self._launch_bot_worker()
+            return
+
         if self.bot_running and not self.bot_stop_event.is_set():
             interval = load_settings()["check_interval_minutes"]
+            # Pause landed on the pass's last leg, so it ran to the end anyway.
+            # Hold the whole interval rather than scheduling it: Continue is
+            # what should start that clock.
+            if self.bot_paused:
+                self.paused_remaining_ms = interval * 60_000
+                self._set_status("main.status_bot_paused")
+                self._update_bot_buttons()
+                return
             self._set_status(next_key, interval=interval, **kwargs)
             self.bot_schedule_timer.start(interval * 60_000)
             self.countdown_timer.start()
         else:
             self.bot_running = False
+            self.bot_paused = False
             self.countdown_timer.stop()
             self._set_status(stopped_key, **kwargs)
-            self.start_bot_button.setEnabled(True)
-            self.stop_bot_button.setEnabled(False)
+            self._update_bot_buttons()
 
     def _update_countdown(self):
         """Refresh the status label with the time left until the next scheduled
@@ -1044,21 +1154,94 @@ class MainWindow(QWidget):
             "main.status_bot_error_next", "main.status_bot_error", message=message
         )
 
+    def pause_bot_worker(self):
+        """Middle button: Pause, or Continue when already paused."""
+        if self.bot_paused:
+            self.resume_bot_worker()
+            return
+
+        self.bot_paused = True
+        self.bot_pause_event.set()
+
+        if self.bot_schedule_timer.isActive():
+            # Waiting between passes: freeze what is left of the countdown so
+            # Continue picks up from there instead of restarting the interval.
+            self.paused_remaining_ms = self.bot_schedule_timer.remainingTime()
+            self.bot_schedule_timer.stop()
+            self.countdown_timer.stop()
+            minutes = (self.paused_remaining_ms + 59_999) // 60_000
+            self._set_status("main.status_bot_paused_remaining", minutes=minutes)
+        else:
+            # A pass is scraping. It parks at its next product/shop checkpoint
+            # and does not report back, so the message promises exactly that
+            # rather than claiming it has already stopped.
+            self._set_status("main.status_pausing_bot")
+
+        self._update_bot_buttons()
+
+    def resume_bot_worker(self):
+        """Continue: release a parked pass, or restart the frozen countdown."""
+        self.bot_paused = False
+        self.bot_pause_event.clear()
+
+        if self.bot_worker_active:
+            # The worker thread unblocks itself at the checkpoint it parked on.
+            self._set_status("main.status_bot_running")
+        elif self.paused_remaining_ms > 0:
+            self.bot_schedule_timer.start(self.paused_remaining_ms)
+            self.countdown_timer.start()
+            minutes = (self.paused_remaining_ms + 59_999) // 60_000
+            self.paused_remaining_ms = 0
+            self._set_status("main.status_next_automatic", minutes=minutes)
+        else:
+            # Nothing was pending (paused before anything got scheduled) — the
+            # only sensible resume is to run a pass now.
+            self._launch_bot_worker()
+
+        self._update_bot_buttons()
+
+    def restart_bot_worker(self):
+        """Left button while paused: drop the paused pass and start a fresh one."""
+        self.bot_paused = False
+        self.bot_pause_event.clear()
+        self.paused_remaining_ms = 0
+        self.bot_schedule_timer.stop()
+        self.countdown_timer.stop()
+
+        if self.bot_worker_active:
+            # A parked pass is still alive. Ask it to abandon and let
+            # _reschedule_or_stop launch the replacement once it is really gone:
+            # two BotWorkers scraping at once would fight over Playwright.
+            self.bot_restart_pending = True
+            self.bot_stop_event.set()
+            self._update_bot_buttons()
+            self._set_status("main.status_restarting_bot")
+        else:
+            self._launch_bot_worker()
+
     def stop_bot_worker(self):
         self.bot_running = False
+        self.bot_paused = False
+        self.bot_restart_pending = False
+        self.paused_remaining_ms = 0
         self.bot_schedule_timer.stop()
         self.countdown_timer.stop()
         self.bot_stop_event.set()
-        self.stop_bot_button.setEnabled(False)
+        # Load-bearing: a pass parked on the pause event never returns, so it
+        # would never emit finished — leaving Start disabled forever and hanging
+        # the app on exit. Cleared after the stop flag so it wakes up to that.
+        self.bot_pause_event.clear()
+        self._update_bot_buttons()
 
         if self.bot_worker_active:
             self._set_status("main.status_stopping_bot")
         else:
             self._set_status("main.status_bot_stopped")
-            self.start_bot_button.setEnabled(True)
 
     def closeEvent(self, event):
-        if self.bot_running:
+        # bot_worker_active is checked too: a pass parked on the pause event must
+        # be released here or the thread pool never drains and the app hangs.
+        if self.bot_running or self.bot_worker_active:
             self.stop_bot_worker()
         self.retry_timer.stop()
         self.countdown_timer.stop()
