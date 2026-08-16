@@ -16,9 +16,8 @@ from services.product_service import (
     delete_products,
 )
 from PyQt6 import sip
-from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal, QByteArray, QSize
-from PyQt6.QtGui import QCursor, QIcon, QPixmap, QPainter
-from PyQt6.QtSvg import QSvgRenderer
+from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal, QSize
+from PyQt6.QtGui import QCursor
 from database.db import SessionLocal
 from database.models import ProductShop, Setting
 from PyQt6.QtWidgets import (
@@ -37,79 +36,10 @@ from PyQt6.QtWidgets import (
     QToolTip
 )
 
+from gui import icons
 from gui.bot_worker import BotWorker
 from services.resolver_worker import ResolverWorker, RetryWorker
 from services.resolve_urls_service import MAX_RETRIES
-
-
-# Grey pencil "edit" icon (Material "edit" glyph path), kept inline so no image
-# asset file or PyInstaller --add-data entry is needed. Rendered to a QIcon at
-# runtime — clearer than a text pencil glyph, which read ambiguously. Grey (not
-# red) so it doesn't read as a destructive action like the red delete icon.
-_EDIT_ICON_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-    b'<path fill="#9e9e9e" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z'
-    b'M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0'
-    b'l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>'
-)
-
-# Grey gear "settings" icon (Material "settings" glyph path), kept inline for
-# the same reason as the pencil above. Same neutral grey: the gear opens a
-# configuration panel, so it must not read as an action button.
-_SETTINGS_ICON_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-    b'<path fill="#9e9e9e" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94'
-    b'l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96'
-    b'c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84'
-    b'c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96'
-    b'c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58'
-    b'c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61'
-    b'l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54'
-    b'c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94'
-    b'l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58z'
-    b'M12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>'
-    b'</svg>'
-)
-
-
-# Transport-control icons for the Start / Pause / Stop bot buttons (Material
-# "play_arrow", "pause", "stop" and "refresh" glyph paths), inline for the same
-# reason as the two icons above. Green marks the two "make it go" actions —
-# Start and Continue share this one. Pause, Restart and Stop stay the neutral
-# grey: red is reserved in this window for the destructive delete icon, and
-# stopping the bot destroys nothing.
-_PLAY_ICON_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-    b'<path fill="#4caf50" d="M8 5v14l11-7z"/></svg>'
-)
-
-_PAUSE_ICON_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-    b'<path fill="#9e9e9e" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>'
-)
-
-_STOP_ICON_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-    b'<path fill="#9e9e9e" d="M6 6h12v12H6z"/></svg>'
-)
-
-_RESTART_ICON_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-    b'<path fill="#9e9e9e" d="M17.65 6.35A7.958 7.958 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08'
-    b'A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'
-)
-
-
-def _render_svg_icon(svg_bytes: bytes, size: int = 64) -> QIcon:
-    """Render an inline SVG to a QIcon. A QApplication must already exist."""
-    renderer = QSvgRenderer(QByteArray(svg_bytes))
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    renderer.render(painter)
-    painter.end()
-    return QIcon(pixmap)
 
 
 class PriorityTableWidget(QTableWidget):
@@ -201,18 +131,6 @@ class MainWindow(QWidget):
         self.countdown_timer.setInterval(60_000)
         self.countdown_timer.timeout.connect(self._update_countdown)
 
-        # Pre-rendered red pencil icon for the per-row quick-edit button.
-        self._edit_icon = _render_svg_icon(_EDIT_ICON_SVG)
-        # Pre-rendered gear icon for the top-right settings button.
-        self._settings_icon = _render_svg_icon(_SETTINGS_ICON_SVG)
-        # Pre-rendered transport icons for the bot control row. Start and
-        # Continue share the play glyph; the left button swaps to restart and
-        # the middle one to play while the bot is paused.
-        self._play_icon = _render_svg_icon(_PLAY_ICON_SVG)
-        self._pause_icon = _render_svg_icon(_PAUSE_ICON_SVG)
-        self._stop_icon = _render_svg_icon(_STOP_ICON_SVG)
-        self._restart_icon = _render_svg_icon(_RESTART_ICON_SVG)
-
         # Re-issues the unavailable-store tooltip on an interval so it stays
         # visible for as long as the cursor rests on the ⚠ marker, instead of
         # vanishing after QToolTip's own short default display duration.
@@ -257,7 +175,7 @@ class MainWindow(QWidget):
         # behaviour), so it sits apart from the action buttons: top-right
         # corner, flush with the window edge — directly above "Delete Product".
         self.settings_bot_button = QToolButton()
-        self.settings_bot_button.setIcon(self._settings_icon)
+        self.settings_bot_button.setIcon(icons.settings_icon())
         self.settings_bot_button.setIconSize(QSize(22, 22))
         self.settings_bot_button.setAutoRaise(True)
         self.settings_bot_button.setToolTip(tr("main.tooltip_settings"))
@@ -304,7 +222,7 @@ class MainWindow(QWidget):
         self.stop_bot_button = QPushButton()
         self.stop_bot_button.setMinimumWidth(180)
         self.stop_bot_button.setIconSize(QSize(16, 16))
-        self.stop_bot_button.setIcon(self._stop_icon)
+        self.stop_bot_button.setIcon(icons.stop_icon())
 
         self._update_bot_buttons()
 
@@ -673,7 +591,7 @@ class MainWindow(QWidget):
 
         edit_button = QToolButton()
         # Grey pencil icon (inline SVG → QIcon) — clearer than a text glyph.
-        edit_button.setIcon(self._edit_icon)
+        edit_button.setIcon(icons.edit_icon())
         edit_button.setIconSize(QSize(16, 16))
         edit_button.setAutoRaise(True)
         edit_button.setToolTip(tr("main.tooltip_edit_product"))
@@ -1035,14 +953,14 @@ class MainWindow(QWidget):
         Paused is the only state where the left button does something: it turns
         into "Restart", the escape hatch from a pass parked half-way through."""
         if self.bot_paused:
-            self.start_bot_button.setIcon(self._restart_icon)
+            self.start_bot_button.setIcon(icons.restart_icon())
             self.start_bot_button.setText(tr("main.btn_restart_bot"))
-            self.pause_bot_button.setIcon(self._play_icon)
+            self.pause_bot_button.setIcon(icons.play_icon())
             self.pause_bot_button.setText(tr("main.btn_continue_bot"))
         else:
-            self.start_bot_button.setIcon(self._play_icon)
+            self.start_bot_button.setIcon(icons.play_icon())
             self.start_bot_button.setText(tr("main.btn_start_bot"))
-            self.pause_bot_button.setIcon(self._pause_icon)
+            self.pause_bot_button.setIcon(icons.pause_icon())
             self.pause_bot_button.setText(tr("main.btn_pause_bot"))
 
         self.stop_bot_button.setText(tr("main.btn_stop_bot"))
