@@ -14,7 +14,7 @@
 
   "main": {
     "window_title": "Price Bot",
-    "heading": "Game Price Tracker",
+    "heading": "Best Game Price Tracker",
 
     "btn_add_product": "Add Product",
     "btn_delete_product": "Delete Product",

@@ -14,7 +14,7 @@
 
   "main": {
     "window_title": "Price Bot",
-    "heading": "Rastreador de Precios de Juegos",
+    "heading": "Buscador de Mejores Precios de Videojuegos",
 
     "btn_add_product": "Añadir Producto",
     "btn_delete_product": "Eliminar Producto",
@@ -26,7 +26,7 @@
     "header_priority": "Prioridad",
     "header_product": "Producto",
     "header_platform": "Plataforma",
-    "header_target_price": "Precio Objetivo",
+    "header_target_price": "Precio Deseado",
     "header_shops": "Tiendas",
     "header_best_price": "Mejor Precio",
 
