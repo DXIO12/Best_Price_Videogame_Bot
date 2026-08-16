@@ -429,7 +429,8 @@ class ShopManagerDialog(QDialog):
 
         layout.addWidget(QLabel(
             "Check a shop to include it · Uncheck to remove it\n"
-            "Edit the URL field to set a manual URL (overrides the auto-resolver)"
+            "Edit the URL field to set a manual URL (overrides the auto-resolver) — "
+            "typing a URL includes its shop automatically"
         ))
 
         self.table = QTableWidget()
@@ -474,6 +475,11 @@ class ShopManagerDialog(QDialog):
             # Col 2 — URL (editable QLineEdit)
             url_edit = QLineEdit(original_url)
             url_edit.setPlaceholderText("Leave empty — auto-resolver will fill this")
+            # Connected after the text is set, so loading the stored URL never
+            # ticks the checkbox by itself.
+            url_edit.textChanged.connect(
+                lambda text, cb=checkbox: self._on_url_typed(text, cb)
+            )
             self.table.setCellWidget(row, 2, url_edit)
 
             self._row_data.append({
@@ -499,6 +505,14 @@ class ShopManagerDialog(QDialog):
         cancel_btn.clicked.connect(self.close)
 
         self.setLayout(layout)
+
+    def _on_url_typed(self, text: str, checkbox: QCheckBox):
+        """Typing a URL includes its shop: a manual URL is only saved when the
+        shop is checked, so an unchecked row's URL would be dropped on Confirm.
+        Clearing the field never unchecks — an empty URL is valid (the
+        auto-resolver will search for it)."""
+        if text.strip():
+            checkbox.setChecked(True)
 
     # ---------------------------------------------------------
     # Save logic
