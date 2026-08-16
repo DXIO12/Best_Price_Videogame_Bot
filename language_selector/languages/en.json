@@ -1,0 +1,182 @@
+{
+  "_meta": {
+    "name": "English"
+  },
+
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "all": "ALL",
+    "none": "None",
+    "n_selected": "{count} selected"
+  },
+
+  "main": {
+    "window_title": "Price Bot",
+    "heading": "Game Price Tracker",
+
+    "btn_add_product": "Add Product",
+    "btn_delete_product": "Delete Product",
+    "btn_modify_product": "Modify Product",
+    "btn_update_urls": "Update URLs",
+    "btn_start_bot": "Start Bot",
+    "btn_stop_bot": "Stop Bot",
+
+    "header_priority": "Priority",
+    "header_product": "Product",
+    "header_platform": "Platform",
+    "header_target_price": "Target Price",
+    "header_shops": "Shops",
+    "header_best_price": "Best Price",
+
+    "tooltip_settings": "Settings",
+    "tooltip_add_product": "Add a new product",
+    "tooltip_edit_product": "Edit this product",
+    "tooltip_delete_product": "Delete this product",
+    "tooltip_header_shops": "Shop status icons (hover one for details):\n✖  no URL yet\n⏳  URL failed — retry scheduled\n⚠ (red)  URL failed — retries exhausted\n❗ (yellow)  no price found (product unavailable)",
+    "tooltip_header_priority": "Search priority. Drag rows to reorder — the bot searches\nlower-numbered rows first.",
+
+    "shop_marker": {
+      "no_url": "No URL assigned yet — waiting for the first search attempt",
+      "retry_scheduled": "URL lookup failed — a retry is scheduled",
+      "retry_exhausted": "URL lookup failed after all retries — set the URL manually",
+      "unavailable": "The store does not have the selected product available"
+    },
+
+    "confirm_delete_title": "Confirm Delete",
+    "confirm_delete_body": "Are you sure you want to delete \"{label}\"?",
+
+    "no_products_title": "No products",
+    "no_products_body": "No products found in the table.",
+    "update_urls_title": "Update URLs",
+    "update_urls_body": "Update missing URLs for {count} product(s)?\nOnly shops without a URL will be updated.",
+
+    "status_ready": "Ready",
+    "status_resolving": "Resolving URLs for {count} product(s)...",
+    "status_resolver_running": "URL resolver running...",
+    "status_resolver_done": "URL resolver done — {count} URL(s) resolved.",
+    "status_resolver_error": "Resolver error: {message}",
+    "status_retry_done": "Retry resolver: {count} URL(s) resolved.",
+    "status_starting_bot": "Starting bot...",
+    "status_bot_running": "Bot is running...",
+    "status_bot_finished_next": "Bot finished. Next check in {interval} min.",
+    "status_bot_error_next": "Bot error: {message} Next check in {interval} min.",
+    "status_bot_error": "Bot error: {message}",
+    "status_bot_stopped": "Bot stopped.",
+    "status_stopping_bot": "Stopping bot (finishing current check)...",
+    "status_next_automatic": "Next automatic check in {minutes} min."
+  },
+
+  "settings": {
+    "window_title": "Settings",
+    "tab_bot": "Bot",
+    "tab_app": "Application",
+    "btn_start_bot": "Start Bot",
+
+    "label_check_interval": "Check interval:",
+    "label_notify_only_best_price": "Notify only best price",
+    "label_repeat_notifications": "Repeat notifications",
+    "label_repeat_notification_minutes": "Repeat notification after:",
+    "label_parallel_scraping": "Parallel scraping",
+    "label_max_parallel_workers": "Scrape in parallel:",
+    "label_debug_mode": "Debug mode",
+    "label_language": "Language:",
+
+    "suffix_minutes": " min",
+    "suffix_shops_at_once": " shops at once",
+
+    "tooltip_check_interval_minutes": "How often (in minutes) the bot checks product prices.\nDefault: 30 min.",
+    "tooltip_notify_only_best_price": "ON  → Only the cheapest shop that beats the target triggers a notification.\nOFF → Every shop below the target price sends its own notification.",
+    "tooltip_repeat_notifications": "ON  → Re-send the notification after the cooldown period,\n      even if the price hasn't changed.\nOFF → Notify only when the price drops for the first time.",
+    "tooltip_repeat_notification_minutes": "Minutes to wait before repeating a notification for the same product.\nOnly active when 'Repeat notifications' is ON.\nDefault: 90 min.",
+    "tooltip_allow_parallel_scraping": "ON  → Several shops are scraped at the same time, so a full check\n      takes about as long as the slowest shop instead of the sum\n      of them all.\nOFF → One shop after another (original behaviour).\nEach shop is still visited by a single worker, so no site ever\nreceives two simultaneous requests.",
+    "tooltip_max_parallel_workers": "How many shops are scraped at the same time.\nOnly active when 'Parallel scraping' is ON.\nEach worker launches its OWN browser: expect roughly 0.5 GB of RAM\nper worker, and with Debug mode ON you will see this many browser\nwindows open at once.\nDefault: 4. Going above that buys very little time for the memory\nit costs (see the benchmark in the README).",
+    "tooltip_debug_mode": "ON  → Visible browser windows while scraping + a console with logs.\nOFF → Headless scraping in the background (Release mode).\nTakes effect on the next app launch. Default: ON in development, OFF in the packaged executable.",
+    "tooltip_language": "Language used across the whole interface.\nApplied as soon as you save — no restart needed.\nTo add a language, drop a new .json file into the 'languages'\nfolder; it shows up here automatically."
+  },
+
+  "add_product": {
+    "window_title": "Add Product",
+    "label_name": "Product Name",
+    "label_platform": "Platform",
+    "label_target_price": "Target Price",
+    "label_priority": "Search Priority (1 = top of the table)",
+    "label_shops": "Select Shops",
+    "tooltip_priority": "Where this product appears in the products table.\n1 = first (searched first). Leave at 1 to add it at the top.",
+    "chk_manual_urls": "Enter shop URLs manually",
+    "chk_manual_urls_count": "Enter shop URLs manually ({count} entered)",
+    "no_shops_title": "No Shops Selected",
+    "no_shops_before_urls": "Please select at least one shop before entering URLs.",
+    "no_shops_body": "Please select at least one shop from the dropdown, or enter at least one manual URL.",
+    "missing_name_title": "Missing Product Name",
+    "missing_name_body": "Please enter a product name before saving."
+  },
+
+  "manual_url": {
+    "window_title": "Enter Shop URLs",
+    "info": "Enter the product URL for each shop (leave blank to auto-resolve).",
+    "placeholder": "https://... (optional)",
+    "confirm_title": "Confirm URL Override",
+    "confirm_body": "You are about to save {count} manual URL(s).\nThese will override any automatically resolved URLs in the database.\n\nAre you sure you want to continue?"
+  },
+
+  "delete_product": {
+    "window_title": "Delete Product",
+    "heading": "Select products to delete",
+    "header_delete": "Delete",
+    "header_product": "Product",
+    "header_platform": "Platform",
+    "header_target_price": "Target Price",
+    "btn_delete_selected": "Delete Selected",
+    "none_selected_title": "No products selected",
+    "none_selected_body": "Please select at least one product/platform to delete.",
+    "confirm_title": "Confirm Delete",
+    "confirm_body": "Are you sure you want to delete the selected product/platform(s)?"
+  },
+
+  "modify_product": {
+    "window_title": "Modify Product",
+    "heading": "Select products to modify (click checkbox column to select, double-click cells to edit)",
+    "header_modify": "Modify",
+    "header_product": "Product",
+    "header_platform": "Platform",
+    "header_shops": "Shops",
+    "header_target_price": "Target Price",
+    "btn_apply": "Apply Changes",
+    "no_shops": "No shops",
+    "tooltip_shops": "Click to manage shops and URLs for this product",
+    "invalid_input_title": "Invalid input",
+    "invalid_price": "Row {row}: Invalid price value. Please enter a valid number.",
+    "none_selected_title": "No products selected",
+    "none_selected_body": "Please select at least one product to modify.",
+    "changes_intro": "The following product changes will be applied:\n\n",
+    "changes_row": "Product: {name}\nPlatforms: {platforms}\nPrice: {price} €\n\n",
+    "confirm_title": "Confirm Changes",
+    "success_title": "Success",
+    "success_body": "Products updated successfully."
+  },
+
+  "shop_manager": {
+    "window_title": "Manage Shops — {product}",
+    "info": "Check a shop to include it · Uncheck to remove it\nEdit the URL field to set a manual URL (overrides the auto-resolver) — typing a URL includes its shop, clearing it again undoes that",
+    "header_include": "Include",
+    "header_shop": "Shop",
+    "header_url": "URL",
+    "placeholder_url": "Leave empty — auto-resolver will fill this",
+    "summary_added_manual": "  • {shop}: shop added with a manual URL",
+    "summary_added_auto": "  • {shop}: shop added (auto-resolver will search)",
+    "summary_removed": "  • {shop}: shop removed",
+    "summary_detail": "  • {shop}: {detail}",
+    "detail_url_cleared": "URL cleared (auto-resolver will search again)",
+    "detail_url_replaced": "existing URL replaced with a new manual URL",
+    "detail_url_set": "manual URL set",
+    "confirm_title": "Confirm Shop Changes",
+    "confirm_intro": "The following shop changes will be applied:\n\n",
+    "confirm_outro": "\n\nDo you want to continue?"
+  },
+
+  "notify": {
+    "price_alert": "PRICE ALERT!\n\nProduct: {product}\nShop: {shop}\nCurrent price: {price}€\nTarget price: {target}€\n\nURL:\n{url}"
+  }
+}
