@@ -6,6 +6,7 @@ from services.product_service import (
     get_platform_priorities,
 )
 from gui.add_product_dialog import MultiSelectDropdown, get_available_shops
+from language_selector import tr
 from database.db import SessionLocal
 from database.models import ProductShop
 from PyQt6.QtCore import pyqtSignal, Qt
@@ -30,7 +31,7 @@ from PyQt6.QtWidgets import (
 def _shop_button_text(records) -> str:
     """Label for the Shops column button: every shop with ✓ (has URL) or ✖ (no URL)."""
     if not records:
-        return "No shops"
+        return tr("modify_product.no_shops")
     return "  ".join(f"{r.shop} {'✓' if r.url else '✖'}" for r in records)
 
 
@@ -41,7 +42,7 @@ class ModifyProductDialog(QDialog):
     def __init__(self, preselect_product_id: int | None = None):
         super().__init__()
 
-        self.setWindowTitle("Modify Product")
+        self.setWindowTitle(tr("modify_product.window_title"))
 
         self.resize(950, 520)
 
@@ -55,17 +56,17 @@ class ModifyProductDialog(QDialog):
 
         layout = QVBoxLayout()
 
-        title = QLabel("Select products to modify (click checkbox column to select, double-click cells to edit)")
+        title = QLabel(tr("modify_product.heading"))
         layout.addWidget(title)
 
         self.product_table = QTableWidget()
         self.product_table.setColumnCount(5)
         self.product_table.setHorizontalHeaderLabels([
-            "Modify",
-            "Product",
-            "Platform",
-            "Shops",
-            "Target Price"
+            tr("modify_product.header_modify"),
+            tr("modify_product.header_product"),
+            tr("modify_product.header_platform"),
+            tr("modify_product.header_shops"),
+            tr("modify_product.header_target_price")
         ])
         # Enable editing on double-click for text cells (not widget columns)
         self.product_table.setEditTriggers(
@@ -88,8 +89,8 @@ class ModifyProductDialog(QDialog):
 
         button_layout = QHBoxLayout()
 
-        self.modify_button = QPushButton("Apply Changes")
-        self.cancel_button = QPushButton("Cancel")
+        self.modify_button = QPushButton(tr("modify_product.btn_apply"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
 
         button_layout.addWidget(self.modify_button)
         button_layout.addWidget(self.cancel_button)
@@ -190,7 +191,7 @@ class ModifyProductDialog(QDialog):
 
             # Col 3 — Shops button
             shop_btn = QPushButton(_shop_button_text(shops_by_pid.get(pid, [])))
-            shop_btn.setToolTip("Click to manage shops and URLs for this product")
+            shop_btn.setToolTip(tr("modify_product.tooltip_shops"))
             shop_btn.clicked.connect(
                 lambda checked, p=pid, n=name: self.open_shop_manager(p, n)
             )
@@ -259,8 +260,8 @@ class ModifyProductDialog(QDialog):
                 except (ValueError, AttributeError):
                     QMessageBox.warning(
                         self,
-                        "Invalid input",
-                        f"Row {row + 1}: Invalid price value. Please enter a valid number."
+                        tr("modify_product.invalid_input_title"),
+                        tr("modify_product.invalid_price", row=row + 1)
                     )
                     return
 
@@ -282,23 +283,27 @@ class ModifyProductDialog(QDialog):
         if not selected_changes:
             QMessageBox.warning(
                 self,
-                "No products selected",
-                "Please select at least one product to modify."
+                tr("modify_product.none_selected_title"),
+                tr("modify_product.none_selected_body")
             )
             return
 
         # Build confirmation text. Shop edits are already saved by the Manage
         # Shops dialog, so they never show up here.
-        changes_text = "The following product changes will be applied:\n\n"
+        changes_text = tr("modify_product.changes_intro")
         for pid, changes in selected_changes.items():
-            platforms_str = ', '.join(changes['platforms']) if changes['platforms'] else "None"
-            changes_text += f"Product: {changes['name']}\n"
-            changes_text += f"Platforms: {platforms_str}\n"
-            changes_text += f"Price: {changes['price']} €\n\n"
+            platforms_str = ', '.join(changes['platforms']) if changes['platforms'] \
+                else tr("common.none")
+            changes_text += tr(
+                "modify_product.changes_row",
+                name=changes['name'],
+                platforms=platforms_str,
+                price=changes['price'],
+            )
 
         confirm = QMessageBox.question(
             self,
-            "Confirm Changes",
+            tr("modify_product.confirm_title"),
             changes_text,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -335,7 +340,11 @@ class ModifyProductDialog(QDialog):
                         print(f"[Modify] '{changes['name']}' — no changes detected")
 
             self.load_products()
-            QMessageBox.information(self, "Success", "Products updated successfully.")
+            QMessageBox.information(
+                self,
+                tr("modify_product.success_title"),
+                tr("modify_product.success_body"),
+            )
             self.product_modified.emit()
             self.close()
 
@@ -391,7 +400,7 @@ class ShopManagerDialog(QDialog):
     def __init__(self, product_id: int, product_name: str, parent=None):
         super().__init__(parent)
         self.product_id = product_id
-        self.setWindowTitle(f"Manage Shops — {product_name}")
+        self.setWindowTitle(tr("shop_manager.window_title", product=product_name))
         self.resize(660, 400)
         self.changes_applied = False
         self._load_data()
@@ -427,15 +436,15 @@ class ShopManagerDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout()
 
-        layout.addWidget(QLabel(
-            "Check a shop to include it · Uncheck to remove it\n"
-            "Edit the URL field to set a manual URL (overrides the auto-resolver) — "
-            "typing a URL includes its shop, clearing it again undoes that"
-        ))
+        layout.addWidget(QLabel(tr("shop_manager.info")))
 
         self.table = QTableWidget()
         self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Include", "Shop", "URL"])
+        self.table.setHorizontalHeaderLabels([
+            tr("shop_manager.header_include"),
+            tr("shop_manager.header_shop"),
+            tr("shop_manager.header_url"),
+        ])
         self.table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch
         )
@@ -474,7 +483,7 @@ class ShopManagerDialog(QDialog):
 
             # Col 2 — URL (editable QLineEdit)
             url_edit = QLineEdit(original_url)
-            url_edit.setPlaceholderText("Leave empty — auto-resolver will fill this")
+            url_edit.setPlaceholderText(tr("shop_manager.placeholder_url"))
             self.table.setCellWidget(row, 2, url_edit)
 
             info = {
@@ -502,8 +511,8 @@ class ShopManagerDialog(QDialog):
         layout.addWidget(self.table)
 
         btn_layout = QHBoxLayout()
-        confirm_btn = QPushButton("Confirm")
-        cancel_btn = QPushButton("Cancel")
+        confirm_btn = QPushButton(tr("common.confirm"))
+        cancel_btn = QPushButton(tr("common.cancel"))
         btn_layout.addWidget(confirm_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
@@ -555,24 +564,25 @@ class ShopManagerDialog(QDialog):
 
             if enabled and not was_enabled:
                 to_add.append({"shop": shop, "url": new_url})
-                summary.append(
-                    f"  • {shop}: shop added "
-                    + ("with a manual URL" if new_url else "(auto-resolver will search)")
-                )
+                summary.append(tr(
+                    "shop_manager.summary_added_manual" if new_url
+                    else "shop_manager.summary_added_auto",
+                    shop=shop,
+                ))
 
             elif not enabled and was_enabled:
                 to_remove.append((rid, shop))
-                summary.append(f"  • {shop}: shop removed")
+                summary.append(tr("shop_manager.summary_removed", shop=shop))
 
             elif enabled and was_enabled and new_url != old_url:
                 to_update.append((rid, new_url))
                 if not new_url:
-                    detail = "URL cleared (auto-resolver will search again)"
+                    detail = tr("shop_manager.detail_url_cleared")
                 elif old_url:
-                    detail = "existing URL replaced with a new manual URL"
+                    detail = tr("shop_manager.detail_url_replaced")
                 else:
-                    detail = "manual URL set"
-                summary.append(f"  • {shop}: {detail}")
+                    detail = tr("shop_manager.detail_url_set")
+                summary.append(tr("shop_manager.summary_detail", shop=shop, detail=detail))
 
         return to_add, to_remove, to_update, summary
 
@@ -585,10 +595,10 @@ class ShopManagerDialog(QDialog):
 
         confirm = QMessageBox.question(
             self,
-            "Confirm Shop Changes",
-            "The following shop changes will be applied:\n\n"
+            tr("shop_manager.confirm_title"),
+            tr("shop_manager.confirm_intro")
             + "\n".join(summary)
-            + "\n\nDo you want to continue?",
+            + tr("shop_manager.confirm_outro"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

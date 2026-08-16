@@ -5,6 +5,7 @@ from services.product_service import (
     get_platform_priorities,
     to_gui_names,
 )
+from language_selector import tr
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
@@ -27,7 +28,7 @@ class DeleteProductDialog(QDialog):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Delete Product")
+        self.setWindowTitle(tr("delete_product.window_title"))
 
         self.resize(700, 400)
 
@@ -37,16 +38,16 @@ class DeleteProductDialog(QDialog):
 
         layout = QVBoxLayout()
 
-        title = QLabel("Select products to delete")
+        title = QLabel(tr("delete_product.heading"))
         layout.addWidget(title)
 
         self.product_table = QTableWidget()
         self.product_table.setColumnCount(4)
         self.product_table.setHorizontalHeaderLabels([
-            "Delete",
-            "Product",
-            "Platform",
-            "Target Price"
+            tr("delete_product.header_delete"),
+            tr("delete_product.header_product"),
+            tr("delete_product.header_platform"),
+            tr("delete_product.header_target_price")
         ])
         self.product_table.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers
@@ -63,8 +64,8 @@ class DeleteProductDialog(QDialog):
 
         button_layout = QHBoxLayout()
 
-        self.delete_button = QPushButton("Delete Selected")
-        self.cancel_button = QPushButton("Cancel")
+        self.delete_button = QPushButton(tr("delete_product.btn_delete_selected"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
 
         button_layout.addWidget(self.delete_button)
         button_layout.addWidget(self.cancel_button)
@@ -145,15 +146,15 @@ class DeleteProductDialog(QDialog):
         if not to_remove:
             QMessageBox.warning(
                 self,
-                "No products selected",
-                "Please select at least one product/platform to delete."
+                tr("delete_product.none_selected_title"),
+                tr("delete_product.none_selected_body")
             )
             return
 
         confirm = QMessageBox.question(
             self,
-            "Confirm Delete",
-            "Are you sure you want to delete the selected product/platform(s)?",
+            tr("delete_product.confirm_title"),
+            tr("delete_product.confirm_body"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )

@@ -22,6 +22,7 @@ from shops.todoconsolas import get_todoconsolas_price
 from shops.playwright_utils import stop_browser
 
 from config.runtime_config import get_debug_mode
+from language_selector import tr
 
 from sqlalchemy import func
 
@@ -154,13 +155,15 @@ def mark_unavailable(db, shop_record: ProductShop):
 
 def send_notification(product_name: str, shop: str, current_price: float,
                       target_price: float, url: str):
-    message = (
-        f"PRICE ALERT!\n\n"
-        f"Product: {product_name}\n"
-        f"Shop: {shop}\n"
-        f"Current price: {current_price}€\n"
-        f"Target price: {target_price}€\n\n"
-        f"URL:\n{url}"
+    # The alert is the one piece of bot output a person reads, so it follows the
+    # selected language. Console logs below stay English on purpose.
+    message = tr(
+        "notify.price_alert",
+        product=product_name,
+        shop=shop,
+        price=current_price,
+        target=target_price,
+        url=url,
     )
     send_telegram_message(
         os.getenv("TELEGRAM_BOT_TOKEN"),

@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QFormLayout,
+    QComboBox,
     QPushButton,
     QLabel,
     QSpinBox,
@@ -16,6 +17,7 @@ from PyQt6.QtCore import pyqtSignal
 from database.db import SessionLocal
 from database.models import Setting
 from config.runtime_config import get_debug_mode, write_config_settings
+from language_selector import available_languages, get_language, set_language, tr
 
 
 DEFAULTS = {
@@ -27,49 +29,10 @@ DEFAULTS = {
     "max_parallel_workers": 4,
 }
 
-_TOOLTIPS = {
-    "check_interval_minutes": (
-        "How often (in minutes) the bot checks product prices.\n"
-        "Default: 30 min."
-    ),
-    "notify_only_best_price": (
-        "ON  → Only the cheapest shop that beats the target triggers a notification.\n"
-        "OFF → Every shop below the target price sends its own notification."
-    ),
-    "repeat_notifications": (
-        "ON  → Re-send the notification after the cooldown period,\n"
-        "      even if the price hasn't changed.\n"
-        "OFF → Notify only when the price drops for the first time."
-    ),
-    "repeat_notification_minutes": (
-        "Minutes to wait before repeating a notification for the same product.\n"
-        "Only active when 'Repeat notifications' is ON.\n"
-        "Default: 90 min."
-    ),
-    "allow_parallel_scraping": (
-        "ON  → Several shops are scraped at the same time, so a full check\n"
-        "      takes about as long as the slowest shop instead of the sum\n"
-        "      of them all.\n"
-        "OFF → One shop after another (original behaviour).\n"
-        "Each shop is still visited by a single worker, so no site ever\n"
-        "receives two simultaneous requests."
-    ),
-    "max_parallel_workers": (
-        "How many shops are scraped at the same time.\n"
-        "Only active when 'Parallel scraping' is ON.\n"
-        "Each worker launches its OWN browser: expect roughly 0.5 GB of RAM\n"
-        "per worker, and with Debug mode ON you will see this many browser\n"
-        "windows open at once.\n"
-        "Default: 4. Going above that buys very little time for the memory\n"
-        "it costs (see the benchmark in the README)."
-    ),
-    "debug_mode": (
-        "ON  → Visible browser windows while scraping + a console with logs.\n"
-        "OFF → Headless scraping in the background (Release mode).\n"
-        "Takes effect on the next app launch. Default: ON in development, "
-        "OFF in the packaged executable."
-    ),
-}
+# Tooltips live in the catalogs under "settings.tooltip_<field key>". They are
+# fetched per call rather than held in a module-level dict: such a dict is
+# built once at import, which would pin every tooltip to whatever language was
+# active at startup and leave them stale after a language change.
 
 
 class SettingsBotDialog(QDialog):
@@ -80,8 +43,8 @@ class SettingsBotDialog(QDialog):
         super().__init__(parent)
         self.auto_start = auto_start
         # "Settings", not "Settings Bot": the window now also holds
-        # application-level options (debug mode, parallel scraping).
-        self.setWindowTitle("Settings")
+        # application-level options (language, debug mode, parallel scraping).
+        self.setWindowTitle(tr("settings.window_title"))
         self.resize(460, 270)
         self._load_data()
         self._setup_ui()
@@ -112,7 +75,7 @@ class SettingsBotDialog(QDialog):
             }
             QPushButton:hover { background-color: #1976D2; }
         """)
-        tip = _TOOLTIPS.get(field_key, "")
+        tip = tr(f"settings.tooltip_{field_key}")
         info_btn.setToolTip(tip)
         info_btn.clicked.connect(
             lambda _, t=tip, title=label_text: QMessageBox.information(self, title, t)
@@ -140,14 +103,14 @@ class SettingsBotDialog(QDialog):
         layout = QVBoxLayout()
 
         tabs = QTabWidget()
-        tabs.addTab(self._build_bot_tab(), "Bot")
-        tabs.addTab(self._build_app_tab(), "Application")
+        tabs.addTab(self._build_bot_tab(), tr("settings.tab_bot"))
+        tabs.addTab(self._build_app_tab(), tr("settings.tab_app"))
         layout.addWidget(tabs)
 
         btn_layout = QHBoxLayout()
-        save_label = "Start Bot" if self.auto_start else "Save"
+        save_label = tr("settings.btn_start_bot") if self.auto_start else tr("common.save")
         save_btn = QPushButton(save_label)
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton(tr("common.cancel"))
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
@@ -165,13 +128,13 @@ class SettingsBotDialog(QDialog):
         # check_interval_minutes
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(1, 1440)
-        self._interval_spin.setSuffix(" min")
+        self._interval_spin.setSuffix(tr("settings.suffix_minutes"))
         self._interval_spin.setValue(
             s.check_interval_minutes if s and s.check_interval_minutes
             else DEFAULTS["check_interval_minutes"]
         )
         form.addRow(
-            self._label_widget("check_interval_minutes", "Check interval:"),
+            self._label_widget("check_interval_minutes", tr("settings.label_check_interval")),
             self._interval_spin,
         )
 
@@ -182,7 +145,7 @@ class SettingsBotDialog(QDialog):
             else DEFAULTS["notify_only_best_price"]
         )
         form.addRow(
-            self._label_widget("notify_only_best_price", "Notify only best price"),
+            self._label_widget("notify_only_best_price", tr("settings.label_notify_only_best_price")),
             self._best_price_chk,
         )
 
@@ -193,14 +156,14 @@ class SettingsBotDialog(QDialog):
             else DEFAULTS["repeat_notifications"]
         )
         form.addRow(
-            self._label_widget("repeat_notifications", "Repeat notifications"),
+            self._label_widget("repeat_notifications", tr("settings.label_repeat_notifications")),
             self._repeat_chk,
         )
 
         # repeat_notification_minutes (enabled only when repeat_notifications is ON)
         self._repeat_spin = QSpinBox()
         self._repeat_spin.setRange(1, 1440)
-        self._repeat_spin.setSuffix(" min")
+        self._repeat_spin.setSuffix(tr("settings.suffix_minutes"))
         self._repeat_spin.setValue(
             s.repeat_notification_minutes if s and s.repeat_notification_minutes
             else DEFAULTS["repeat_notification_minutes"]
@@ -208,16 +171,33 @@ class SettingsBotDialog(QDialog):
         self._repeat_spin.setEnabled(self._repeat_chk.isChecked())
         self._repeat_chk.toggled.connect(self._repeat_spin.setEnabled)
         form.addRow(
-            self._label_widget("repeat_notification_minutes", "Repeat notification after:"),
+            self._label_widget(
+                "repeat_notification_minutes",
+                tr("settings.label_repeat_notification_minutes"),
+            ),
             self._repeat_spin,
         )
 
         return page
 
     def _build_app_tab(self) -> QWidget:
-        """How the app itself runs: scraping concurrency and debug mode."""
+        """How the app itself runs: language, scraping concurrency, debug mode."""
         s = self._existing
         page, form = self._make_form_page()
+
+        # language — first row: it is the one setting that changes every other
+        # label on screen. Options come from whatever catalogs exist on disk,
+        # so a new languages/*.json shows up here without touching this file.
+        self._language_combo = QComboBox()
+        for code, display_name in available_languages():
+            self._language_combo.addItem(display_name, code)
+        current = self._language_combo.findData(get_language())
+        if current >= 0:
+            self._language_combo.setCurrentIndex(current)
+        form.addRow(
+            self._label_widget("language", tr("settings.label_language")),
+            self._language_combo,
+        )
 
         # allow_parallel_scraping
         self._parallel_chk = QCheckBox()
@@ -226,14 +206,14 @@ class SettingsBotDialog(QDialog):
             else DEFAULTS["allow_parallel_scraping"]
         )
         form.addRow(
-            self._label_widget("allow_parallel_scraping", "Parallel scraping"),
+            self._label_widget("allow_parallel_scraping", tr("settings.label_parallel_scraping")),
             self._parallel_chk,
         )
 
         # max_parallel_workers (enabled only when allow_parallel_scraping is ON)
         self._workers_spin = QSpinBox()
         self._workers_spin.setRange(2, 8)
-        self._workers_spin.setSuffix(" shops at once")
+        self._workers_spin.setSuffix(tr("settings.suffix_shops_at_once"))
         self._workers_spin.setValue(
             s.max_parallel_workers if s and s.max_parallel_workers
             else DEFAULTS["max_parallel_workers"]
@@ -241,7 +221,7 @@ class SettingsBotDialog(QDialog):
         self._workers_spin.setEnabled(self._parallel_chk.isChecked())
         self._parallel_chk.toggled.connect(self._workers_spin.setEnabled)
         form.addRow(
-            self._label_widget("max_parallel_workers", "Scrape in parallel:"),
+            self._label_widget("max_parallel_workers", tr("settings.label_max_parallel_workers")),
             self._workers_spin,
         )
 
@@ -252,7 +232,7 @@ class SettingsBotDialog(QDialog):
             else get_debug_mode()
         )
         form.addRow(
-            self._label_widget("debug_mode", "Debug mode"),
+            self._label_widget("debug_mode", tr("settings.label_debug_mode")),
             self._debug_chk,
         )
 
@@ -266,6 +246,7 @@ class SettingsBotDialog(QDialog):
         parallel = self._parallel_chk.isChecked()
         workers = self._workers_spin.value()
         debug = self._debug_chk.isChecked()
+        language = self._language_combo.currentData() or get_language()
 
         db = SessionLocal()
         setting = db.query(Setting).first()
@@ -280,6 +261,7 @@ class SettingsBotDialog(QDialog):
         setting.allow_parallel_scraping = parallel
         setting.max_parallel_workers = workers
         setting.debug_mode = debug
+        setting.language = language
 
         db.commit()
         db.close()
@@ -293,7 +275,12 @@ class SettingsBotDialog(QDialog):
             "allow_parallel_scraping": parallel,
             "max_parallel_workers": workers,
             "debug_mode": debug,
+            "language": language,
         })
+
+        # Applied before settings_saved fires, so whoever listens (the main
+        # window, to relabel itself) already sees the new language.
+        set_language(language)
 
         print("===================================")
         print(f"[Settings Bot] Check Interval:          {interval} min")
@@ -305,6 +292,7 @@ class SettingsBotDialog(QDialog):
         if parallel:
             print(f"[Settings Bot] Parallel Workers:        {workers}")
         print(f"[Settings Bot] Debug Mode:              {debug}")
+        print(f"[Settings Bot] Language:                {language}")
         print("===================================")
 
         self.settings_saved.emit()

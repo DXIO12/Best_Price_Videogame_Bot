@@ -6,6 +6,7 @@ from gui.add_product_dialog import AddProductDialog, get_available_shops
 from gui.delete_product_dialog import DeleteProductDialog
 from gui.modify_product_dialog import ModifyProductDialog
 from gui.settings_bot import SettingsBotDialog
+from language_selector import init_language, tr
 from services.product_service import (
     get_products_with_shops,
     to_gui_names,
@@ -137,7 +138,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Price Bot")
+        self.setWindowTitle(tr("main.window_title"))
 
         self.resize(1200, 700)
         self._center_on_screen()
@@ -203,7 +204,8 @@ class MainWindow(QWidget):
         main_layout = QVBoxLayout()
 
         # TITLE + SETTINGS GEAR
-        title = QLabel("Game Price Tracker")
+        # Kept on self so _retranslate_ui can relabel it after a language change.
+        self.title_label = QLabel(tr("main.heading"))
 
         # The gear groups every kind of customisation (bot behaviour and app
         # behaviour), so it sits apart from the action buttons: top-right
@@ -212,11 +214,11 @@ class MainWindow(QWidget):
         self.settings_bot_button.setIcon(self._settings_icon)
         self.settings_bot_button.setIconSize(QSize(22, 22))
         self.settings_bot_button.setAutoRaise(True)
-        self.settings_bot_button.setToolTip("Settings")
+        self.settings_bot_button.setToolTip(tr("main.tooltip_settings"))
         self.settings_bot_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         title_layout = QHBoxLayout()
-        title_layout.addWidget(title)
+        title_layout.addWidget(self.title_label)
         title_layout.addStretch()
         title_layout.addWidget(self.settings_bot_button)
 
@@ -226,29 +228,29 @@ class MainWindow(QWidget):
         button_layout = QHBoxLayout()
 
         self.add_product_button = QPushButton(
-            "Add Product"
+            tr("main.btn_add_product")
         )
 
         self.delete_product_button = QPushButton(
-            "Delete Product"
+            tr("main.btn_delete_product")
         )
 
         self.modify_product_button = QPushButton(
-            "Modify Product"
+            tr("main.btn_modify_product")
         )
 
         self.update_urls_button = QPushButton(
-            "Update URLs"
+            tr("main.btn_update_urls")
         )
         self.update_urls_button.setMinimumWidth(180)
 
         self.start_bot_button = QPushButton(
-            "Start Bot"
+            tr("main.btn_start_bot")
         )
         self.start_bot_button.setMinimumWidth(180)
 
         self.stop_bot_button = QPushButton(
-            "Stop Bot"
+            tr("main.btn_stop_bot")
         )
         self.stop_bot_button.setMinimumWidth(180)
         self.stop_bot_button.setEnabled(False)
@@ -293,28 +295,7 @@ class MainWindow(QWidget):
         # header would otherwise show a second, redundant number.
         self.product_table.verticalHeader().setVisible(False)
 
-        self.product_table.setHorizontalHeaderLabels([
-            "Priority",
-            "Product",
-            "Platform",
-            "Target Price",
-            "Shops",
-            "Best Price",
-            "",
-            ""
-        ])
-
-        self.product_table.horizontalHeaderItem(4).setToolTip(
-            "Shop status icons (hover one for details):\n"
-            "✖  no URL yet\n"
-            "⏳  URL failed — retry scheduled\n"
-            "⚠ (red)  URL failed — retries exhausted\n"
-            "❗ (yellow)  no price found (product unavailable)"
-        )
-        self.product_table.horizontalHeaderItem(0).setToolTip(
-            "Search priority. Drag rows to reorder — the bot searches\n"
-            "lower-numbered rows first."
-        )
+        self._retranslate_table_headers()
 
         self.product_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.product_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -324,8 +305,6 @@ class MainWindow(QWidget):
         self.product_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
-        self.product_table.horizontalHeaderItem(6).setToolTip("Edit this product")
-        self.product_table.horizontalHeaderItem(7).setToolTip("Delete this product")
 
         # Drag-and-drop row reordering (Amazon-list style) — each row is one
         # product+platform combination with its own independent priority.
@@ -365,10 +344,68 @@ class MainWindow(QWidget):
         start_button_layout.addStretch()
         main_layout.addLayout(start_button_layout)
 
-        self.status_label = QLabel("Ready")
+        self.status_label = QLabel()
+        self._set_status("main.status_ready")
         main_layout.addWidget(self.status_label)
 
         self.setLayout(main_layout)
+
+    # =========================================
+    # TRANSLATION
+    # =========================================
+
+    def _retranslate_table_headers(self):
+        """(Re)label the product table's header row and its per-column tooltips.
+
+        Split out of setup_ui because _retranslate_ui needs the same work after
+        a language change — setHorizontalHeaderLabels replaces the header items,
+        so the tooltips have to be re-applied right after it, every time."""
+        self.product_table.setHorizontalHeaderLabels([
+            tr("main.header_priority"),
+            tr("main.header_product"),
+            tr("main.header_platform"),
+            tr("main.header_target_price"),
+            tr("main.header_shops"),
+            tr("main.header_best_price"),
+            "",
+            ""
+        ])
+        self.product_table.horizontalHeaderItem(0).setToolTip(tr("main.tooltip_header_priority"))
+        self.product_table.horizontalHeaderItem(4).setToolTip(tr("main.tooltip_header_shops"))
+        self.product_table.horizontalHeaderItem(6).setToolTip(tr("main.tooltip_edit_product"))
+        self.product_table.horizontalHeaderItem(7).setToolTip(tr("main.tooltip_delete_product"))
+
+    def _set_status(self, key: str, **kwargs):
+        """Show a status message, remembering which key produced it.
+
+        Storing the key (rather than only the rendered text) is what lets
+        _retranslate_ui redraw the *current* status in the new language instead
+        of leaving it stranded in the old one."""
+        self._status_key = key
+        self._status_kwargs = kwargs
+        self.status_label.setText(tr(key, **kwargs))
+
+    def _retranslate_ui(self):
+        """Re-apply every string in this window after a language change.
+
+        Only MainWindow needs this: the dialogs are constructed fresh each time
+        they are opened, so they pick up the new language on their own."""
+        self.setWindowTitle(tr("main.window_title"))
+        self.title_label.setText(tr("main.heading"))
+        self.settings_bot_button.setToolTip(tr("main.tooltip_settings"))
+
+        self.add_product_button.setText(tr("main.btn_add_product"))
+        self.modify_product_button.setText(tr("main.btn_modify_product"))
+        self.delete_product_button.setText(tr("main.btn_delete_product"))
+        self.update_urls_button.setText(tr("main.btn_update_urls"))
+        self.start_bot_button.setText(tr("main.btn_start_bot"))
+        self.stop_bot_button.setText(tr("main.btn_stop_bot"))
+
+        self._retranslate_table_headers()
+        # Rebuilds every cell and cell widget, which is where the per-row "＋",
+        # edit and delete tooltips (and the Shops column text) come from.
+        self.load_products()
+        self._set_status(self._status_key, **self._status_kwargs)
 
     # =========================================
     # OPEN ADD PRODUCT DIALOG
@@ -429,12 +466,12 @@ class MainWindow(QWidget):
     # QLabel's rich text engine does not turn the HTML "title" attribute into
     # a hover tooltip — only anchors emit linkHovered, which
     # _on_shop_link_hovered listens to in order to show the right text below.
-    SHOP_MARKER_TOOLTIPS = {
-        "no_url": "No URL assigned yet — waiting for the first search attempt",
-        "retry_scheduled": "URL lookup failed — a retry is scheduled",
-        "retry_exhausted": "URL lookup failed after all retries — set the URL manually",
-        "unavailable": "The store does not have the selected product available",
-    }
+    #
+    # The marker names double as catalog keys under "main.shop_marker". Their
+    # text is looked up at hover time rather than stored in a class-level dict:
+    # such a dict is built once at import, so it would keep serving the language
+    # that was active at startup even after the user switches.
+    SHOP_MARKERS = ("no_url", "retry_scheduled", "retry_exhausted", "unavailable")
     NO_URL_MARKER = ' <a href="no_url" style="text-decoration:none;">✖</a>'
     RETRY_SCHEDULED_MARKER = ' <a href="retry_scheduled" style="text-decoration:none;">⏳</a>'
     RETRY_EXHAUSTED_MARKER = (
@@ -466,7 +503,7 @@ class MainWindow(QWidget):
         all_have_url = norm_records == norm_all and all(r.url for r in shop_records)
         none_unavailable = all(r.available is not False for r in shop_records)
         if all_have_url and none_unavailable:
-            return "ALL"
+            return tr("common.all")
 
         seen: set[str] = set()
         parts: list[str] = []
@@ -489,7 +526,7 @@ class MainWindow(QWidget):
                 # unavailable warning catches the eye before the shop name.
                 label = f"{MainWindow.UNAVAILABLE_MARKER.strip()} {label}"
             parts.append(label)
-        return ", ".join(parts) if parts else "None"
+        return ", ".join(parts) if parts else tr("common.none")
 
     def _set_rank_cell_widget(self, row: int, rank: int, key: tuple, is_first: bool, is_last: bool):
         """Rank number plus small ▲▼ nudge buttons — moving a row by exactly
@@ -563,7 +600,7 @@ class MainWindow(QWidget):
         add_button = QToolButton()
         add_button.setText("＋")
         add_button.setAutoRaise(True)
-        add_button.setToolTip("Add a new product")
+        add_button.setToolTip(tr("main.tooltip_add_product"))
         add_button.setStyleSheet("QToolButton { font-size: 16px; font-weight: bold; }")
         add_button.clicked.connect(self.open_add_product_dialog)
         layout.addWidget(add_button)
@@ -583,7 +620,7 @@ class MainWindow(QWidget):
         edit_button.setIcon(self._edit_icon)
         edit_button.setIconSize(QSize(16, 16))
         edit_button.setAutoRaise(True)
-        edit_button.setToolTip("Edit this product")
+        edit_button.setToolTip(tr("main.tooltip_edit_product"))
         edit_button.clicked.connect(
             lambda _checked, pid=product_id:
                 self.open_modify_product_dialog(preselect_product_id=pid)
@@ -605,7 +642,7 @@ class MainWindow(QWidget):
         delete_button = QToolButton()
         delete_button.setText("🗑")
         delete_button.setAutoRaise(True)
-        delete_button.setToolTip("Delete this product")
+        delete_button.setToolTip(tr("main.tooltip_delete_product"))
         delete_button.setStyleSheet("QToolButton { color: #cc3333; font-size: 14px; }")
         delete_button.clicked.connect(
             lambda _checked, pid=product_id, name=product_name, plat=platform_name:
@@ -623,8 +660,8 @@ class MainWindow(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Confirm Delete",
-            f'Are you sure you want to delete "{label}"?',
+            tr("main.confirm_delete_title"),
+            tr("main.confirm_delete_body", label=label),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -658,7 +695,7 @@ class MainWindow(QWidget):
 
     def _on_shop_link_hovered(self, url: str):
         """Keep a shop status marker's tooltip visible while hovering it."""
-        text = self.SHOP_MARKER_TOOLTIPS.get(url)
+        text = tr(f"main.shop_marker.{url}") if url in self.SHOP_MARKERS else None
         if text:
             label = self.sender()
             rect = label.rect()
@@ -837,14 +874,17 @@ class MainWindow(QWidget):
                     product_ids.add(pid)
 
         if not product_ids:
-            QMessageBox.information(self, "No products", "No products found in the table.")
+            QMessageBox.information(
+                self,
+                tr("main.no_products_title"),
+                tr("main.no_products_body"),
+            )
             return
 
         confirm = QMessageBox.question(
             self,
-            "Update URLs",
-            f"Update missing URLs for {len(product_ids)} product(s)?\n"
-            "Only shops without a URL will be updated.",
+            tr("main.update_urls_title"),
+            tr("main.update_urls_body", count=len(product_ids)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes
         )
@@ -861,11 +901,11 @@ class MainWindow(QWidget):
         self.start_resolver_worker([product_id])
 
     def start_resolver_worker(self, product_ids: list):
-        self.status_label.setText(f"Resolving URLs for {len(product_ids)} product(s)...")
+        self._set_status("main.status_resolving", count=len(product_ids))
 
         worker = ResolverWorker(product_ids)
         worker.signals.started.connect(
-            lambda: self.status_label.setText("URL resolver running...")
+            lambda: self._set_status("main.status_resolver_running")
         )
         worker.signals.progress.connect(self.on_resolver_progress)
         worker.signals.finished.connect(self.on_resolver_finished)
@@ -892,11 +932,11 @@ class MainWindow(QWidget):
             1 for shops in results.values()
             for url in shops.values() if url
         )
-        self.status_label.setText(f"URL resolver done — {resolved} URL(s) resolved.")
+        self._set_status("main.status_resolver_done", count=resolved)
         self.load_products()
 
     def on_resolver_error(self, message: str):
-        self.status_label.setText(f"Resolver error: {message}")
+        self._set_status("main.status_resolver_error", message=message)
 
     # =========================================
     # RETRY QUEUE (background timer)
@@ -911,7 +951,7 @@ class MainWindow(QWidget):
 
     def on_retry_finished(self, resolved_count: int):
         if resolved_count > 0:
-            self.status_label.setText(f"Retry resolver: {resolved_count} URL(s) resolved.")
+            self._set_status("main.status_retry_done", count=resolved_count)
             self.load_products()
 
     # =========================================
@@ -920,6 +960,9 @@ class MainWindow(QWidget):
 
     def open_settings_bot_dialog(self):
         dialog = SettingsBotDialog(parent=self)
+        # Saving may have changed the language: relabel this window in place.
+        # The dialogs need no such hook — each is rebuilt on its next open.
+        dialog.settings_saved.connect(self._retranslate_ui)
         dialog.exec()
 
     # =========================================
@@ -947,29 +990,33 @@ class MainWindow(QWidget):
         self.countdown_timer.stop()
         self.start_bot_button.setEnabled(False)
         self.stop_bot_button.setEnabled(True)
-        self.status_label.setText("Starting bot...")
+        self._set_status("main.status_starting_bot")
 
         worker = BotWorker(self.bot_stop_event)
-        worker.signals.started.connect(lambda: self.status_label.setText("Bot is running..."))
+        worker.signals.started.connect(lambda: self._set_status("main.status_bot_running"))
         worker.signals.finished.connect(self.on_bot_finished)
         worker.signals.error.connect(self.on_bot_error)
 
         self.thread_pool.start(worker)
 
-    def _reschedule_or_stop(self, pass_status: str, stopped_status: str):
+    def _reschedule_or_stop(self, next_key: str, stopped_key: str, **kwargs):
         """Shared post-pass logic for on_bot_finished/on_bot_error.
 
         If the user hasn't pressed Stop, schedule the next pass after the
-        configured interval. Otherwise finalise the "stopped" state."""
+        configured interval. Otherwise finalise the "stopped" state.
+
+        Takes catalog keys rather than ready-made text so the status can be
+        re-rendered later in a different language; ``kwargs`` carries anything
+        the message needs that isn't translatable (an error string, say)."""
         if self.bot_running and not self.bot_stop_event.is_set():
             interval = load_settings()["check_interval_minutes"]
-            self.status_label.setText(f"{pass_status} Next check in {interval} min.")
+            self._set_status(next_key, interval=interval, **kwargs)
             self.bot_schedule_timer.start(interval * 60_000)
             self.countdown_timer.start()
         else:
             self.bot_running = False
             self.countdown_timer.stop()
-            self.status_label.setText(stopped_status)
+            self._set_status(stopped_key, **kwargs)
             self.start_bot_button.setEnabled(True)
             self.stop_bot_button.setEnabled(False)
 
@@ -982,16 +1029,20 @@ class MainWindow(QWidget):
         remaining = self.bot_schedule_timer.remainingTime()
         if remaining > 0:
             mins = (remaining + 59_999) // 60_000  # ceil to whole minutes
-            self.status_label.setText(f"Next automatic check in {mins} min.")
+            self._set_status("main.status_next_automatic", minutes=mins)
 
     def on_bot_finished(self):
         self.bot_worker_active = False
         self.load_products()
-        self._reschedule_or_stop("Bot finished.", "Bot stopped.")
+        self._reschedule_or_stop(
+            "main.status_bot_finished_next", "main.status_bot_stopped"
+        )
 
     def on_bot_error(self, message):
         self.bot_worker_active = False
-        self._reschedule_or_stop(f"Bot error: {message}", f"Bot error: {message}")
+        self._reschedule_or_stop(
+            "main.status_bot_error_next", "main.status_bot_error", message=message
+        )
 
     def stop_bot_worker(self):
         self.bot_running = False
@@ -1001,9 +1052,9 @@ class MainWindow(QWidget):
         self.stop_bot_button.setEnabled(False)
 
         if self.bot_worker_active:
-            self.status_label.setText("Stopping bot (finishing current check)...")
+            self._set_status("main.status_stopping_bot")
         else:
-            self.status_label.setText("Bot stopped.")
+            self._set_status("main.status_bot_stopped")
             self.start_bot_button.setEnabled(True)
 
     def closeEvent(self, event):
@@ -1016,6 +1067,9 @@ class MainWindow(QWidget):
 # Establish execution mode (console/logs + headless resolution) before anything
 # scrapes or prints. Must run before the browsers or Qt event loop start.
 init_runtime_mode()
+
+# Resolve the UI language before any widget is built — every tr() below reads it.
+init_language()
 
 app = QApplication(sys.argv)
 

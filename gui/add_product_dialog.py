@@ -1,4 +1,5 @@
 from services.product_service import create_product, get_platform_priorities
+from language_selector import tr
 from PyQt6.QtCore import pyqtSignal, QTimer, QPoint
 from PyQt6.QtWidgets import (
     QDialog,
@@ -76,7 +77,7 @@ class MultiSelectDropdown(QWidget):
     def setup_ui(self):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        self.display_button = QPushButton("ALL")
+        self.display_button = QPushButton(tr("common.all"))
         self.display_button.clicked.connect(self.show_popup)
         self.display_button.setStyleSheet("""
             QPushButton {
@@ -98,7 +99,7 @@ class MultiSelectDropdown(QWidget):
         menu = QMenu(self)
         if self.include_all_option:
             all_widget_action = QWidgetAction(menu)
-            all_cb = QCheckBox("ALL")
+            all_cb = QCheckBox(tr("common.all"))
             all_cb.setChecked(all(self._state.values()))
             all_cb.stateChanged.connect(lambda state: self._set_all_state(state == 2))
             all_widget_action.setDefaultWidget(all_cb)
@@ -146,13 +147,13 @@ class MultiSelectDropdown(QWidget):
     def update_display(self):
         selected = self.get_selected()
         if len(selected) == len(self.shops):
-            self.display_button.setText("ALL")
+            self.display_button.setText(tr("common.all"))
         elif len(selected) == 0:
-            self.display_button.setText("None")
+            self.display_button.setText(tr("common.none"))
         elif len(selected) == 1:
             self.display_button.setText(selected[0])
         else:
-            self.display_button.setText(f"{len(selected)} selected")
+            self.display_button.setText(tr("common.n_selected", count=len(selected)))
 
     def get_selected(self):
         return [s for s, v in self._state.items() if v]
@@ -178,7 +179,7 @@ class ManualUrlDialog(QDialog):
 
     def __init__(self, shops: list, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Enter Shop URLs")
+        self.setWindowTitle(tr("manual_url.window_title"))
         self.resize(550, 400)
         self.shops = shops
         self.url_inputs = {}
@@ -187,9 +188,7 @@ class ManualUrlDialog(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout()
 
-        info_label = QLabel(
-            "Enter the product URL for each shop (leave blank to auto-resolve)."
-        )
+        info_label = QLabel(tr("manual_url.info"))
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -206,7 +205,7 @@ class ManualUrlDialog(QDialog):
             label = QLabel(f"{shop}:")
             label.setFixedWidth(130)
             url_input = QLineEdit()
-            url_input.setPlaceholderText("https://... (optional)")
+            url_input.setPlaceholderText(tr("manual_url.placeholder"))
             self.url_inputs[shop.lower()] = url_input
             row.addWidget(label)
             row.addWidget(url_input)
@@ -220,8 +219,8 @@ class ManualUrlDialog(QDialog):
         layout.addWidget(scroll)
 
         button_layout = QHBoxLayout()
-        self.confirm_button = QPushButton("Confirm")
-        self.cancel_button = QPushButton("Cancel")
+        self.confirm_button = QPushButton(tr("common.confirm"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
         button_layout.addWidget(self.confirm_button)
         button_layout.addWidget(self.cancel_button)
         layout.addLayout(button_layout)
@@ -241,10 +240,8 @@ class ManualUrlDialog(QDialog):
         if shop_urls:
             reply = QMessageBox.warning(
                 self,
-                "Confirm URL Override",
-                f"You are about to save {len(shop_urls)} manual URL(s).\n"
-                "These will override any automatically resolved URLs in the database.\n\n"
-                "Are you sure you want to continue?",
+                tr("manual_url.confirm_title"),
+                tr("manual_url.confirm_body", count=len(shop_urls)),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
@@ -265,7 +262,7 @@ class AddProductDialog(QDialog):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Add Product")
+        self.setWindowTitle(tr("add_product.window_title"))
         self.resize(400, 300)
         self.manual_shop_urls = {}
         self.setup_ui()
@@ -273,47 +270,44 @@ class AddProductDialog(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout()
 
-        layout.addWidget(QLabel("Product Name"))
+        layout.addWidget(QLabel(tr("add_product.label_name")))
         self.name_input = QLineEdit()
         layout.addWidget(self.name_input)
 
-        layout.addWidget(QLabel("Platform"))
+        layout.addWidget(QLabel(tr("add_product.label_platform")))
         platforms = ["PS5", "NS2", "NS", "PS4", "PC", "Xbox Series X"]
         self.platform_selector = MultiSelectDropdown(
             platforms, selected=["PS5"], include_all_option=False
         )
         layout.addWidget(self.platform_selector)
 
-        layout.addWidget(QLabel("Target Price"))
+        layout.addWidget(QLabel(tr("add_product.label_target_price")))
         self.price_input = SingleClickDoubleSpinBox()
         self.price_input.setMaximum(99999)
         self.price_input.setSuffix(" €")
         layout.addWidget(self.price_input)
 
-        layout.addWidget(QLabel("Search Priority (1 = top of the table)"))
+        layout.addWidget(QLabel(tr("add_product.label_priority")))
         self.priority_input = QSpinBox()
         existing_rows = len(get_platform_priorities())
         self.priority_input.setMinimum(1)
         self.priority_input.setMaximum(existing_rows + 1)
         self.priority_input.setValue(1)  # default: add as the first product
-        self.priority_input.setToolTip(
-            "Where this product appears in the products table.\n"
-            "1 = first (searched first). Leave at 1 to add it at the top."
-        )
+        self.priority_input.setToolTip(tr("add_product.tooltip_priority"))
         layout.addWidget(self.priority_input)
 
-        layout.addWidget(QLabel("Select Shops"))
+        layout.addWidget(QLabel(tr("add_product.label_shops")))
         self.available_shops = get_available_shops_urlsearcher()
         self.shop_selector = MultiSelectDropdown(self.available_shops)
         layout.addWidget(self.shop_selector)
 
-        self.manual_url_checkbox = QCheckBox("Enter shop URLs manually")
+        self.manual_url_checkbox = QCheckBox(tr("add_product.chk_manual_urls"))
         self.manual_url_checkbox.clicked.connect(self.on_manual_url_clicked)
         layout.addWidget(self.manual_url_checkbox)
 
         button_layout = QHBoxLayout()
-        self.save_button = QPushButton("Save")
-        self.cancel_button = QPushButton("Cancel")
+        self.save_button = QPushButton(tr("common.save"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
         button_layout.addWidget(self.save_button)
         button_layout.addWidget(self.cancel_button)
         layout.addLayout(button_layout)
@@ -332,8 +326,8 @@ class AddProductDialog(QDialog):
         if not selected_shops:
             QMessageBox.warning(
                 self,
-                "No Shops Selected",
-                "Please select at least one shop before entering URLs."
+                tr("add_product.no_shops_title"),
+                tr("add_product.no_shops_before_urls")
             )
             self.manual_url_checkbox.setChecked(False)
             return
@@ -351,7 +345,8 @@ class AddProductDialog(QDialog):
         self.manual_shop_urls = shop_urls
         count = len(shop_urls)
         self.manual_url_checkbox.setText(
-            f"Enter shop URLs manually ({count} entered)" if count else "Enter shop URLs manually"
+            tr("add_product.chk_manual_urls_count", count=count) if count
+            else tr("add_product.chk_manual_urls")
         )
 
     def save_product(self):
@@ -363,8 +358,8 @@ class AddProductDialog(QDialog):
         if not name:
             QMessageBox.warning(
                 self,
-                "Missing Product Name",
-                "Please enter a product name before saving."
+                tr("add_product.missing_name_title"),
+                tr("add_product.missing_name_body")
             )
             return
 
@@ -375,9 +370,8 @@ class AddProductDialog(QDialog):
         if not selected_shops and not self.manual_shop_urls:
             QMessageBox.warning(
                 self,
-                "No Shops Selected",
-                "Please select at least one shop from the dropdown, "
-                "or enter at least one manual URL."
+                tr("add_product.no_shops_title"),
+                tr("add_product.no_shops_body")
             )
             return
 

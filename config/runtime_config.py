@@ -29,12 +29,14 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 
-def _base_dir() -> Path:
+def base_dir() -> Path:
     """Writable base directory: next to the executable when frozen, else the
     repo root.
 
     This module lives in ``<repo>/config/runtime_config.py``, so the repo root
-    is two levels up from this file."""
+    is two levels up from this file. Public because
+    ``language_selector.translator`` also needs it, to find user-dropped
+    language catalogs."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
@@ -46,15 +48,15 @@ def config_json_path() -> Path:
     Dev keeps the existing ``bot/config.json``; a frozen build writes next to
     the executable (the bundled ``bot/`` dir is read-only)."""
     if getattr(sys, "frozen", False):
-        return _base_dir() / "config.json"
-    return _base_dir() / "bot" / "config.json"
+        return base_dir() / "config.json"
+    return base_dir() / "bot" / "config.json"
 
 
 def log_file_path() -> Path:
     """Log file location: ``<base>/logs/price_bot.log`` (repo root in dev, next
     to the executable when frozen). The ``logs`` dir is created on demand by
     ``init_runtime_mode``."""
-    return _base_dir() / "logs" / "price_bot.log"
+    return base_dir() / "logs" / "price_bot.log"
 
 
 # ---------------------------------------------------------------------------

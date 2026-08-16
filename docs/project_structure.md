@@ -30,6 +30,13 @@ price-bot/
 │   ├── modify_product_dialog.py
 │   └── settings_bot.py
 │
+├── language_selector/
+│   ├── __init__.py
+│   ├── translator.py
+│   └── languages/
+│       ├── en.json
+│       └── es.json
+│
 ├── launcher/
 │   ├── build_exe.bat
 │   ├── build_exe.sh
@@ -100,8 +107,8 @@ SQLAlchemy models and DB utilities.
 | ------ | ----------- |
 | `__init__.py` | Package marker. |
 | `db.py` | Creates the SQLAlchemy engine and `SessionLocal` factory for SQLite. Uses `Path(__file__).resolve().parent` to build an absolute path to `tracker.db`, so the DB is always found regardless of the working directory. |
-| `init_db.py` | Creates all tables on first run and runs `ALTER TABLE` migrations automatically (adds `retry_count`, `next_retry_at`, `repeat_notification_minutes` if they don't exist). Safe to run multiple times. Called by all launchers before starting the app. |
-| `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (check_interval_minutes, notify_only_best_price, repeat_notifications, repeat_notification_minutes, debug_mode, allow_parallel_scraping, max_parallel_workers). |
+| `init_db.py` | Creates all tables on first run and runs `ALTER TABLE` migrations automatically (adds `retry_count`, `next_retry_at`, `repeat_notification_minutes`, `language` if they don't exist). Safe to run multiple times. Called by all launchers before starting the app. |
+| `models.py` | ORM models: `Product` (name, target price), `Platform` (PS5, Switch, etc.), `ProductShop` (URL, last price, retry state, notification timestamp), `Setting` (check_interval_minutes, notify_only_best_price, repeat_notifications, repeat_notification_minutes, debug_mode, allow_parallel_scraping, max_parallel_workers, language). |
 | `seed_platforms.py` | One-off script that inserts the default platform list into the DB. |
 
 ---
@@ -118,6 +125,34 @@ Project documentation.
 
 ---
 
+### `language_selector/`
+
+Interface translations. Every user-facing string comes from here through
+`tr("<section>.<key>")` — console and log output is deliberately left in English,
+since diagnostics are easier to compare when they read the same everywhere.
+
+| File | Description |
+| ------ | ----------- |
+| `__init__.py` | Re-exports the public API: `tr`, `set_language`, `get_language`, `available_languages`, `init_language`. |
+| `translator.py` | Loads the JSON catalogs and resolves the active language. Order (first wins): `PRICE_BOT_LANG` env → DB `Setting.language` → `config.json ["language"]` → system locale (only if a catalog exists for it) → `en`. Lookups fall back active catalog → English → the key itself, so a missing or malformed entry never raises inside a Qt slot. |
+| `languages/en.json` | Reference catalog (source language). |
+| `languages/es.json` | Spanish catalog. |
+
+**Adding a language — no code change required.** Copy `en.json` to
+`languages/<code>.json` (e.g. `fr.json`), set `_meta.name` to the name that should
+appear in the dropdown (e.g. `"Français"`), and translate the values. It shows up
+in Settings → Application → Language on the next launch. Keys you leave out fall
+back to English one by one, so a partial translation is perfectly usable.
+
+Placeholders such as `{count}` or `{product}` are named, not positional, so a
+translation is free to reorder them — just keep the same names.
+
+Catalogs are searched in two places, external first: a `languages/` folder next to
+the executable (or the repo root), then the bundled one. That means a packaged
+build can gain a language, or override a shipped one, without rebuilding.
+
+---
+
 ### `gui/`
 
 PyQt6 desktop application.
@@ -130,7 +165,7 @@ PyQt6 desktop application.
 | `bot_worker.py` | `QRunnable` that calls `check_prices()` from `bot.bot` in a background thread. Emits `started`, `finished`, and `error` signals to keep the GUI responsive. |
 | `delete_product_dialog.py` | Dialog to select and delete a product and all its associated `ProductShop` rows. Prints deleted product/platform info to the terminal. |
 | `modify_product_dialog.py` | Dialog to edit an existing product's name, platforms, target price, and shop configuration. Columns: Modify (checkbox), Product, Platform, Shops, Target Price. The Shops button opens `ShopManagerDialog`. Changes are staged in memory and only written to the DB when "Apply Changes" is clicked. |
-| `settings_bot.py` | `SettingsBotDialog` — window titled "Settings", opened from the gear button. Two tabs: **Bot** (check interval, notify-only-best-price, repeat notifications, repeat cooldown in minutes) and **Application** (parallel scraping, max parallel workers, debug mode). Each field has a circular ℹ button with a description popup. The repeat-cooldown field is disabled when repeat notifications are off, and the workers field when parallel scraping is off. Save writes all fields to the `Setting` DB table and mirrors them to `config.json`. Supports `auto_start=True` mode (button label becomes "Start Bot") used when the user launches the bot without prior configuration. |
+| `settings_bot.py` | `SettingsBotDialog` — window titled "Settings", opened from the gear button. Two tabs: **Bot** (check interval, notify-only-best-price, repeat notifications, repeat cooldown in minutes) and **Application** (language, parallel scraping, max parallel workers, debug mode). The language `QComboBox` is populated from whatever catalogs exist in `language_selector/languages/`, and saving applies the new language immediately — the main window relabels itself via `MainWindow._retranslate_ui`, and the dialogs pick it up on their next open. Each field has a circular ℹ button with a description popup. The repeat-cooldown field is disabled when repeat notifications are off, and the workers field when parallel scraping is off. Save writes all fields to the `Setting` DB table and mirrors them to `config.json`. Supports `auto_start=True` mode (button label becomes "Start Bot") used when the user launches the bot without prior configuration. |
 
 ---
 
@@ -144,7 +179,7 @@ Scripts to start or build the project without needing to know the Python environ
 | `start_gui.bat` | Windows equivalent of `start_gui.sh`. Uses `icacls` to restrict `.env` permissions. |
 | `start_bot.sh` | Linux/macOS — same setup as `start_gui.sh`, then runs the headless bot (`python -m bot.bot`). |
 | `start_bot.bat` | Windows equivalent of `start_bot.sh`. |
-| `build_exe.sh` | Linux/macOS — uses PyInstaller to build a standalone `dist/price_bot_gui/` directory (bundles `gui/`, `bot/`, `database/`, `shops/`, `services/`). Note: `playwright install chromium` must be run on the target machine separately. |
+| `build_exe.sh` | Linux/macOS — uses PyInstaller to build a standalone `dist/price_bot_gui/` directory (bundles `gui/`, `bot/`, `database/`, `shops/`, `services/`, `config/`, `language_selector/`). Note: `playwright install chromium` must be run on the target machine separately. |
 | `build_exe.bat` | Windows equivalent of `build_exe.sh`. |
 
 ---

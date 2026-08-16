@@ -78,6 +78,11 @@ class Setting(Base):
     # its own browser, so this caps both concurrency and memory use.
     max_parallel_workers = Column(Integer)
 
+    # UI language as a catalog code ("en", "es", ...) matching a file in
+    # language_selector/languages/. None → resolved from the system locale, then English,
+    # in language_selector.translator.resolve_language().
+    language = Column(String)
+
 
 class Product(Base):
 
