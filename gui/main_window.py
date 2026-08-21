@@ -40,6 +40,7 @@ from gui import icons
 from gui.bot_worker import BotWorker
 from services.resolver_worker import ResolverWorker, RetryWorker
 from services.resolve_urls_service import MAX_RETRIES
+from services.url_resolvers.resolution import ResolutionStatus
 
 
 class PriorityTableWidget(QTableWidget):
@@ -901,12 +902,53 @@ class MainWindow(QWidget):
             if item and item.data(Qt.ItemDataRole.UserRole) == product_id:
                 self._set_shops_cell(row, shop_records, all_shops)
 
+    @staticmethod
+    def _shops_with_status(results: dict, status: ResolutionStatus) -> str:
+        """Comma-joined names of the shops that came back with one status.
+
+        Deduplicated across products: resolving three games at once must not
+        print "Pccomponentes, Pccomponentes, Pccomponentes".
+        """
+        names: list[str] = []
+        for shops in results.values():
+            for shop, outcome in shops.items():
+                if outcome.status is status and shop not in names:
+                    names.append(shop)
+        return ", ".join(names)
+
     def on_resolver_finished(self, results: dict):
+        """Report the pass, naming the shops that gave a definitive "no".
+
+        Those rows show no URL and no pending retry, which on its own looks
+        identical to a lookup that simply broke — so the reason is spelled out
+        here. Every placeholder is a count or a shop name, both untranslated, so
+        _retranslate_ui can redraw this line in a new language from the stored
+        key and kwargs alone."""
         resolved = sum(
             1 for shops in results.values()
-            for url in shops.values() if url
+            for outcome in shops.values() if outcome.url
         )
-        self._set_status("main.status_resolver_done", count=resolved)
+        not_found = self._shops_with_status(results, ResolutionStatus.NOT_FOUND)
+        only_used = self._shops_with_status(results, ResolutionStatus.ONLY_USED)
+
+        if not_found and only_used:
+            self._set_status(
+                "main.status_resolver_done_both",
+                count=resolved, not_found=not_found, only_used=only_used,
+            )
+        elif not_found:
+            self._set_status(
+                "main.status_resolver_done_not_found",
+                count=resolved, not_found=not_found,
+            )
+        elif only_used:
+            self._set_status(
+                "main.status_resolver_done_only_used",
+                count=resolved, only_used=only_used,
+            )
+        else:
+            self._set_status("main.status_resolver_done", count=resolved)
+
         self.load_products()
 
     def on_resolver_error(self, message: str):

@@ -5,9 +5,12 @@ from sqlalchemy.orm import joinedload
 from database.db import SessionLocal
 from database.models import Product, ProductShop
 
-# These shops apply platform filtering via on-site UI — platform must not be
-# appended to the search query or it will pollute/break the search results.
-_SHOPS_WITH_PLATFORM_FILTER = {"wakkap", "xtralife"}
+# Shops that determine the platform themselves — from an on-site facet
+# (wakkap, xtralife) or from the product URL slug the resolver matches against
+# (game). Appending the platform to the query pollutes their results, and on
+# game.es it destroys them outright: "ninja-gaiden-ragebound" returns the
+# product, "ninja-gaiden-ragebound-switch" returns nothing at all.
+_SHOPS_WITH_PLATFORM_FILTER = {"wakkap", "xtralife", "game"}
 
 SHOP_SEARCH_PATTERNS = {
     "amazon": "https://www.amazon.es/s?k={query}",

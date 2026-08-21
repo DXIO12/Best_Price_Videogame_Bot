@@ -13,7 +13,7 @@ from services.resolve_urls_service import resolve_urls_for_products, retry_due_s
 class ResolverWorkerSignals(QObject):
     started  = pyqtSignal()
     progress = pyqtSignal(int, str, str)  # (product_id, shop_name, resolved_url or "")
-    finished = pyqtSignal(dict)           # {product_id: {shop: url_or_None}}
+    finished = pyqtSignal(dict)           # {product_id: {shop: ResolutionResult}}
     error    = pyqtSignal(str)
 
 
@@ -68,7 +68,10 @@ class RetryWorker(QRunnable):
                     pid, shop, url or ""
                 ),
             )
-            resolved = sum(1 for shops in results.values() for url in shops.values() if url)
+            resolved = sum(
+                1 for shops in results.values()
+                for outcome in shops.values() if outcome.url
+            )
             self.signals.finished.emit(resolved)
         except Exception as e:
             self.signals.error.emit(str(e))
