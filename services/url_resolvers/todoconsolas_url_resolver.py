@@ -6,6 +6,10 @@ from urllib.parse import urlparse, parse_qs, unquote_plus
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 from config.runtime_config import resolve_headless
+from services.url_resolvers.resolution import (
+    title_match_ratio,
+    MIN_TITLE_MATCH_RATIO,
+)
 
 BASE_URL = "https://www.todoconsolas.com"
 
@@ -42,18 +46,6 @@ KNOWN_REGIONS = PAL_ES_REGIONS | {
     "ASIA", "KOR", "AUS", "CAN", "RU",
 }
 
-# Words that carry no meaning when comparing a query with a product title:
-# platform names (already handled by the slug filter) and filler.
-_IGNORED_QUERY_WORDS = {
-    "ps5", "ps4", "ps3", "ps2", "switch", "nsw", "xbox", "series", "one", "x",
-    "s", "pc", "2", "de", "the", "of", "y", "and", "edition", "edicion",
-}
-
-# Share of the meaningful query words that must appear in the title before a
-# card is accepted. Without it a search with no real match would resolve to
-# whatever loosely related product the shop happened to return.
-MIN_TITLE_MATCH_RATIO = 0.6
-
 # The search overlay is a Vue app rendered inside a shadow root, so its markup
 # is invisible to document.querySelectorAll — every read has to go through
 # Playwright locators, which do pierce open shadow roots.
@@ -61,20 +53,6 @@ RESULT_SELECTOR = '[data-test="result"]'
 RESULT_LINK_SELECTOR = '[data-test="result-link"]'
 FACET_SELECTOR = '.x-mot-facet'
 FILTER_SELECTOR = '[data-test="filter"]'
-
-
-def _normalize_words(text: str) -> set[str]:
-    """Lowercase a string and split it into comparable words."""
-    cleaned = re.sub(r"[^a-z0-9\s]", " ", text.lower())
-    return {word for word in cleaned.split() if word}
-
-
-def _title_match_ratio(query: str, title: str) -> float:
-    """Share of the query's meaningful words that appear in the product title."""
-    query_words = _normalize_words(query) - _IGNORED_QUERY_WORDS
-    if not query_words:
-        return 0.0
-    return len(query_words & _normalize_words(title)) / len(query_words)
 
 
 def _title_region(title: str) -> str | None:
@@ -167,7 +145,7 @@ def _pick_best_card(cards: list[dict], query: str, platform: str | None) -> str 
         if region is not None and region not in PAL_ES_REGIONS:
             continue
 
-        ratio = _title_match_ratio(query, title)
+        ratio = title_match_ratio(query, title)
         if ratio < MIN_TITLE_MATCH_RATIO:
             continue
 

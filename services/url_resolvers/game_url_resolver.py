@@ -4,10 +4,54 @@ import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 from config.runtime_config import resolve_headless
+from services.url_resolvers.resolution import (
+    is_digital,
+    is_used,
+    normalize_words,
+    not_found,
+    only_used,
+    resolved,
+    search_failed,
+    title_match_ratio,
+    MIN_TITLE_MATCH_RATIO,
+)
 from shops.price_utils import extract_price
-from urllib.parse import unquote_plus
+from urllib.parse import quote, unquote_plus
 
 BASE_URL = "https://www.game.es"
+
+# The full search results page — NOT the header autocomplete this resolver used
+# to read. Three reasons the dropdown had to go:
+#   * it pads short result lists with unrelated best-sellers, which is how a
+#     search for Ninja Gaiden Ragebound came back with Minecraft;
+#   * it hides second-hand listings, so "GAME only has it seminuevo" was
+#     indistinguishable from "GAME does not have it";
+#   * it is capped at ~10 suggestions, so a real match can simply fall off.
+# `/buscar?q=` (redirects to `/buscar/<slug>`) is the page a shopper actually
+# sees. Note the shape: `/buscar?text=`, which url_search_service builds for
+# display, silently renders the home page instead.
+RESULTS_URL = f"{BASE_URL}/buscar?q={{slug}}"
+
+# The grid, then one result card. The grid also renders for a search with no
+# hits — game.es fills it with ~8 loosely related products rather than showing
+# an empty state — so its presence proves the page loaded, never that the
+# product was found. Only the relevance floor can tell those apart.
+# `search-completed` is the class game.es adds once the list has finished
+# hydrating. Waiting on the bare `div.search-list` returns while the grid still
+# holds a single empty skeleton card, so every attribute read comes back None
+# and a stocked product reads as absent (README § "Scraper Waits").
+RESULTS_SELECTOR = "div.search-list.search-completed"
+CARD_SELECTOR = "div.search-item"
+
+# Second guard on the same race: a card whose link already carries its href.
+CARD_READY_SELECTOR = f"{CARD_SELECTOR} a.figure[href]"
+
+# Carries the product URL plus a clean, un-truncated title in
+# `data-list-item-name` — the rendered <h3> is subject to CSS ellipsis.
+CARD_LINK_SELECTOR = "a.figure"
+
+# game.es slugs the query with hyphens; spaces resolve to an empty result page.
+_SLUG_SEPARATORS = re.compile(r"[^\w]+", re.UNICODE)
 
 # The main buy box, and the only node on the page that identifies it. A product
 # page carries exactly one `[data-quick-container]` but 9-11 `.buy--price`
@@ -47,9 +91,6 @@ _OWN_TEXT_JS = """el => {
     return text.trim();
 }"""
 
-USED_KEYWORDS = {"segunda mano", "seminuevo", "usado", "reacondicionado", "segunda-mano"}
-DIGITAL_KEYWORDS = {"prepago", "prepagos", "digital", "descarga"}
-
 # Maps our internal platform names → the path segment game.es uses in product URLs
 # e.g. /videojuegos/accion/playstation-5/007-first-light/246786
 PLATFORM_SLUGS = {
@@ -64,18 +105,13 @@ PLATFORM_SLUGS = {
 }
 
 
-def _is_used(title: str) -> bool:
-    t = title.lower()
-    return any(kw in t for kw in USED_KEYWORDS)
+def _slugify(text: str) -> str:
+    """'Ninja Gaiden Ragebound' → 'ninja-gaiden-ragebound'.
 
-
-def _is_digital(title: str) -> bool:
-    t = title.lower()
-    return any(kw in t for kw in DIGITAL_KEYWORDS)
-
-
-def _words(text: str) -> set[str]:
-    return set(re.sub(r"[^a-z0-9\s]", " ", text.lower()).split())
+    `\\w` rather than `[a-z0-9]` so accented letters survive: game.es keeps them
+    in its own slugs ('.../tomodachi-life-una-vida-de-ensueño/256491').
+    """
+    return _SLUG_SEPARATORS.sub("-", text.lower()).strip("-")
 
 
 def _matches_platform(href: str, slug: str) -> bool:
@@ -156,16 +192,23 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
     query = search_url.split("text=")[-1]
     query = unquote_plus(query)
 
-    query_words = _words(query)
+    query_words = normalize_words(query)
 
     # game.es titles say "PLAYSTATION 5", never "PS5", so the platform can't be
     # scored as plain text — it's used as a hard filter on the URL slug instead.
     platform_slug = PLATFORM_SLUGS.get(platform.lower().strip()) if platform else None
     if platform and not platform_slug:
-        query_words |= _words(platform)
+        query_words |= normalize_words(platform)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=resolve_headless())
+        # channel="chromium": the full browser, not the lightweight "headless
+        # shell" Playwright launches by default for headless=True. Same defect
+        # BrowserManager works around for El Corte Inglés — the shell renders
+        # this search page with a single, attribute-less card, so a product
+        # that is plainly there reads as absent. That matters more here than in
+        # a scraper: a false "not found" is now terminal, and would stop the
+        # shop being tracked at all.
+        browser = p.chromium.launch(headless=resolve_headless(), channel="chromium")
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -176,58 +219,65 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
         page = context.new_page()
         page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        # Accept cookies
+        # Accept cookies on the home page before searching: the consent overlay
+        # covers the results grid, and the choice then rides on the context.
         try:
             page.locator('button#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll').click(timeout=8000)
             page.wait_for_timeout(2000)
         except Exception:
             pass
 
-        # Type in the search box to trigger autocomplete
         try:
-            page.locator('input#searchinput').click(timeout=5000)
-            page.locator('input#searchinput').fill(query)
-            page.wait_for_timeout(2000)
+            page.goto(RESULTS_URL.format(slug=quote(_slugify(query))),
+                      wait_until="domcontentloaded")
+            # state="attached": the first card can sit outside the viewport, and
+            # the default "visible" would time out on a page that rendered fine.
+            page.wait_for_selector(RESULTS_SELECTOR, state="attached", timeout=20000)
+            page.wait_for_selector(CARD_READY_SELECTOR, state="attached", timeout=10000)
         except PlaywrightTimeout:
-            print("[Game] Search input not found.")
+            print("[Game] Search results did not render.")
             browser.close()
-            return None
+            return search_failed()
 
-        # Wait for autocomplete results
-        try:
-            page.wait_for_selector('a.ui-search-menu-item-wrapper', timeout=10000)
-        except PlaywrightTimeout:
-            print("[Game] Autocomplete results did not appear.")
-            browser.close()
-            return None
+        items = page.locator(CARD_SELECTOR).all()[:20]
 
-        items = page.locator('a.ui-search-menu-item-wrapper').all()[:10]
-
-        # Step 1 — score all non-used candidates of the requested platform
+        # Step 1 — score all new, physical candidates of the requested platform
         candidates = []  # (score, href, title)
-        first_href = None
-        off_platform = 0
+        used_matches = []  # titles of the right product, but second-hand
 
         for item in items:
             try:
-                title = item.inner_text(timeout=2000).strip()
-                href = item.get_attribute("href", timeout=2000)
-                if not href:
+                link = item.locator(CARD_LINK_SELECTOR).first
+                href = link.get_attribute("href", timeout=2000)
+                title = (link.get_attribute("data-list-item-name", timeout=2000) or "").strip()
+                if not href or not title:
                     continue
 
-                if first_href is None:
-                    first_href = href
+                # Unlike the autocomplete, results-page titles carry no platform
+                # suffix — what follows the dash is an edition ("- Seminuevo",
+                # "- Edición Coleccionista"). So the whole title is scored, and
+                # the `extra` penalty below keeps those editions from tying with
+                # the plain one that was asked for.
+                on_platform = not platform_slug or _matches_platform(href, platform_slug)
+                relevant = title_match_ratio(query, title) >= MIN_TITLE_MATCH_RATIO
 
-                if _is_used(title) or _is_digital(title):
+                if is_used(title):
+                    # Remembered rather than dropped: when these are the *only*
+                    # matches, the honest answer is "GAME has it, but only
+                    # second-hand" — not "not found", and certainly not the
+                    # URL of whatever unrelated game the autocomplete padded
+                    # the list with.
+                    if relevant and on_platform:
+                        used_matches.append(title)
                     continue
 
-                if platform_slug and not _matches_platform(href, platform_slug):
-                    off_platform += 1
+                if is_digital(title):
                     continue
 
-                # Titles are "<name> - <PLATFORM>"; score only the name part so the
-                # platform label doesn't inflate the score of every candidate.
-                title_words = _words(title.split(" - ")[0])
+                if not on_platform or not relevant:
+                    continue
+
+                title_words = normalize_words(title)
                 matched = len(query_words & title_words)
                 extra = len(title_words - query_words)
                 # Extra words are a penalty: it keeps "Edición Coleccionista" and
@@ -237,16 +287,16 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
             except Exception:
                 continue
 
-        if not candidates and off_platform:
-            browser.close()
-            print(f"[Game] No {platform} results among the autocomplete items.")
-            return None
-
         if not candidates:
             browser.close()
-            result = (first_href if first_href.startswith("http") else f"{BASE_URL}{first_href}") if first_href else None
-            print(f"[Game] No scored candidates — fallback: {result}")
-            return result
+            if used_matches:
+                print(f"[Game] Only second-hand copies: {used_matches[0]}")
+                return only_used()
+            # The autocomplete answered, so the shop has been heard from: it
+            # pads short result lists with loosely related games, and none of
+            # them cleared the relevance floor.
+            print(f"[Game] No new {platform} copy matching '{query}'.")
+            return not_found()
 
         # Step 2 — keep only the top-scoring candidates
         max_score = max(c[0] for c in candidates)
@@ -257,7 +307,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
             href = top_candidates[0][1]
             result = href if href.startswith("http") else f"{BASE_URL}{href}"
             print(f"[Game] Resolved (single top): {result}")
-            return result
+            return resolved(result)
 
         # Step 3 — visit each top candidate and read its price; pick cheapest.
         # This only works because read_game_price() reports a pre-order page's
@@ -284,8 +334,11 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
 
         browser.close()
 
+        # Every fallback here is still one of the top-scoring candidates, so
+        # it has already cleared the relevance floor — this only decides which
+        # of several equally good matches wins when no price could be read.
         result = best_href or (
             top_candidates[0][1] if top_candidates[0][1].startswith("http")
             else f"{BASE_URL}{top_candidates[0][1]}"
         )
-        return result
+        return resolved(result)

@@ -3,17 +3,51 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 from config.runtime_config import resolve_headless
-from urllib.parse import unquote_plus
+from services.url_resolvers.resolution import (
+    is_used,
+    not_found,
+    only_used,
+    platform_matches_title,
+    resolved,
+    search_failed,
+    title_match_ratio,
+    MIN_TITLE_MATCH_RATIO,
+)
+from urllib.parse import urlparse, parse_qs, unquote_plus
 
 BASE_URL = "https://www.mediamarkt.es"
 
+# The search results grid. Its presence is what separates "the shop answered
+# and has nothing" from "the page never rendered" — the two outcomes this
+# resolver has to report differently.
+RESULTS_SELECTOR = '[data-test="mms-search-srp-productlist"]'
+
+# One result card. The old selector,
+# `a[data-test="mms-router-link-product-list-item-link"]`, no longer exists in
+# MediaMarkt's markup: every search timed out waiting for a node that is never
+# emitted, burned all six retries and reported the product as unresolvable even
+# though the search page itself loaded fine and the product was right there.
+# Anchoring on the card and reading the link out of it survives a renamed
+# anchor, because the product URL shape is the stable part.
+CARD_SELECTOR = 'article[data-test="mms-product-card"]'
+CARD_LINK_SELECTOR = 'a[href*="/product/"]'
+CARD_TITLE_SELECTOR = '[data-test="product-title"]'
+
 
 def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None):
-    query = search_url.split("query=")[-1]
-    query = unquote_plus(query)
+    query = parse_qs(urlparse(search_url).query).get("query", [""])[0]
+    if not query:
+        query = unquote_plus(search_url.split("query=")[-1])
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=resolve_headless())
+        # channel="chromium": the full browser, not the lightweight "headless
+        # shell" Playwright launches by default for headless=True. Same defect
+        # BrowserManager works around for El Corte Inglés — the shell renders
+        # this search page with a single, attribute-less card, so a product
+        # that is plainly there reads as absent. That matters more here than in
+        # a scraper: a false "not found" is now terminal, and would stop the
+        # shop being tracked at all.
+        browser = p.chromium.launch(headless=resolve_headless(), channel="chromium")
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -22,64 +56,78 @@ def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None)
             )
         )
         page = context.new_page()
-        page.goto(BASE_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
 
-        # Accept cookies
+        # Straight to the search URL instead of loading the home page, clicking
+        # the search box, typing and pressing Enter. Four fewer things to break,
+        # and get_search_url() already built the exact URL that flow produced.
+        page.goto(search_url, wait_until="domcontentloaded")
+
+        # Accept cookies — while the consent layer is up it swallows clicks and
+        # holds back the grid.
         try:
             page.locator('button#pwa-consent-layer-accept-all-button').click(timeout=8000)
-            page.wait_for_timeout(2000)
-        except:
+            page.wait_for_timeout(1500)
+        except Exception:
             pass
 
-        # Type in the search box
         try:
-            page.locator('input#search-form').click(timeout=5000)
-            page.locator('input#search-form').fill(query)
-            page.wait_for_timeout(1000)
+            page.wait_for_selector(RESULTS_SELECTOR, state="attached", timeout=20000)
         except PlaywrightTimeout:
-            print("Search input not found.")
+            print("[MediaMarkt] Search results grid did not render.")
             browser.close()
-            return None
+            return search_failed()
 
-        # Submit the search by pressing Enter
-        page.locator('input#search-form').press("Enter")
-
-        # Wait for search results page to load
+        # The grid appears before its cards are hydrated.
         try:
-            page.wait_for_selector(
-                'a[data-test="mms-router-link-product-list-item-link"]',
-                timeout=15000
-            )
+            page.wait_for_selector(CARD_SELECTOR, state="attached", timeout=10000)
         except PlaywrightTimeout:
-            print("Search results did not appear.")
+            # Grid rendered with no cards in it — that is the shop's answer.
+            print(f"[MediaMarkt] No results for '{query}'.")
             browser.close()
-            return None
-
-        # Wait a bit more for all cards to render
-        page.wait_for_timeout(2000)
-
-        # Grab all product result links
-        items = page.locator('a[data-test="mms-router-link-product-list-item-link"]').all()
+            return not_found()
 
         href = None
-        for item in items:
+        used_matches = []
+
+        for card in page.locator(CARD_SELECTOR).all():
             try:
-                title = item.locator('p[data-test="product-title"]').inner_text(timeout=3000).strip().lower()
-
-                if platform and platform.lower() not in title:
-                    continue
-
-                href = item.get_attribute("href", timeout=3000)
-                if href:
-                    break
-            except:
+                title = card.locator(CARD_TITLE_SELECTOR).first.inner_text(
+                    timeout=3000
+                ).strip()
+            except Exception:
                 continue
+
+            # Titles read "Juego Nintendo Switch Ninja Gaiden Ragebound,
+            # Acción", so the platform is only ever part of a longer sentence —
+            # matching on it alone (the previous behaviour) accepts every game
+            # for that console.
+            if title_match_ratio(query, title) < MIN_TITLE_MATCH_RATIO:
+                continue
+
+            if not platform_matches_title(platform, title):
+                continue
+
+            if is_used(title):
+                used_matches.append(title)
+                continue
+
+            try:
+                href = card.locator(CARD_LINK_SELECTOR).first.get_attribute(
+                    "href", timeout=3000
+                )
+            except Exception:
+                continue
+
+            if href:
+                break
 
         browser.close()
 
         if not href:
-            print(f"No matching product found for platform: {platform}")
-            return None
+            if used_matches:
+                print(f"[MediaMarkt] Only second-hand copies: {used_matches[0]}")
+                return only_used()
+            print(f"[MediaMarkt] '{query}' not sold for {platform}.")
+            return not_found()
 
-        return href if href.startswith("http") else f"{BASE_URL}{href}"
+        return resolved(href if href.startswith("http") else f"{BASE_URL}{href}")
