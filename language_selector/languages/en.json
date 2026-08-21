@@ -19,7 +19,6 @@
     "btn_add_product": "Add Product",
     "btn_delete_product": "Delete Product",
     "btn_modify_product": "Modify Product",
-    "btn_update_urls": "Update URLs",
     "btn_start_bot": "Start Bot",
     "btn_stop_bot": "Stop Bot",
     "btn_pause_bot": "Pause Bot",
@@ -35,6 +34,7 @@
 
     "tooltip_settings": "Settings",
     "tooltip_add_product": "Add a new product",
+    "tooltip_update_urls": "Search for the shop URLs that are still missing, for every product",
     "tooltip_edit_product": "Edit this product",
     "tooltip_delete_product": "Delete this product",
     "tooltip_header_shops": "Shop status icons (hover one for details):\n✖  no URL yet\n⏳  URL failed — retry scheduled\n⚠ (red)  URL failed — retries exhausted\n❗ (yellow)  no price found (product unavailable)",

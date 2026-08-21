@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QMessageBox,
     QAbstractItemView,
+    QSizePolicy,
     QToolButton,
     QToolTip
 )
@@ -140,6 +141,13 @@ class MainWindow(QWidget):
         self._shop_tooltip_timer = QTimer(self)
         self._shop_tooltip_timer.timeout.connect(self._refresh_shop_tooltip)
 
+        # The resolve-URLs icon lives in a table cell that load_products()
+        # rebuilds wholesale, so its enabled state cannot live on the widget
+        # alone: it is kept here and re-applied by _set_add_row on every
+        # rebuild. Both must exist before setup_ui/load_products run.
+        self._resolver_busy = False
+        self.update_urls_button = None
+
         self.setup_ui()
 
         self.load_products()
@@ -204,11 +212,6 @@ class MainWindow(QWidget):
             tr("main.btn_modify_product")
         )
 
-        self.update_urls_button = QPushButton(
-            tr("main.btn_update_urls")
-        )
-        self.update_urls_button.setMinimumWidth(180)
-
         # Bot transport row: Start · Pause · Stop. The first two swap their icon
         # and label depending on state (see _update_bot_buttons), which also sets
         # every label and enabled flag below — hence no text passed here.
@@ -237,7 +240,6 @@ class MainWindow(QWidget):
         self.modify_product_button.clicked.connect(
             lambda: self.open_modify_product_dialog()
         )
-        self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
         self.settings_bot_button.clicked.connect(self.open_settings_bot_dialog)
         self.start_bot_button.clicked.connect(self.start_bot_worker)
         self.pause_bot_button.clicked.connect(self.pause_bot_worker)
@@ -302,14 +304,9 @@ class MainWindow(QWidget):
 
         main_layout.addWidget(self.product_table)
 
-        # UPDATE URLs (row 1)
-        control_button_layout = QHBoxLayout()
-        control_button_layout.addStretch()
-        control_button_layout.addWidget(self.update_urls_button)
-        control_button_layout.addStretch()
-        main_layout.addLayout(control_button_layout)
-
-        # START · PAUSE · STOP BOT (row 2, centered)
+        # START · PAUSE · STOP BOT (centered)
+        # Update URLs used to sit in a row of its own here; it now lives as an
+        # icon in the pinned first table row, over the Shops column it acts on.
         start_button_layout = QHBoxLayout()
         start_button_layout.addStretch()
         start_button_layout.addWidget(self.start_bot_button)
@@ -371,14 +368,13 @@ class MainWindow(QWidget):
         self.add_product_button.setText(tr("main.btn_add_product"))
         self.modify_product_button.setText(tr("main.btn_modify_product"))
         self.delete_product_button.setText(tr("main.btn_delete_product"))
-        self.update_urls_button.setText(tr("main.btn_update_urls"))
         # Relabels whichever variant the three bot buttons are currently showing
         # (Start vs Restart, Pause vs Continue).
         self._update_bot_buttons()
 
         self._retranslate_table_headers()
-        # Rebuilds every cell and cell widget, which is where the per-row "＋",
-        # edit and delete tooltips (and the Shops column text) come from.
+        # Rebuilds every cell and cell widget, which is where the "＋", resolve
+        # URLs, edit and delete tooltips (and the Shops column text) come from.
         self.load_products()
         self._set_status(self._status_key, **self._status_kwargs)
 
@@ -555,17 +551,52 @@ class MainWindow(QWidget):
         self.load_products()
 
     def _set_add_row(self, row: int):
-        """Pinned, non-editable first row whose only interactive element is a
-        single '+' button spanning the edit + delete columns — a shortcut that
-        opens the Add Product dialog. Kept as a real table row (not a bar above
-        the table) so it lines up with the action columns."""
+        """Pinned, non-editable first row carrying the two table-wide actions:
+        a '+' button spanning the edit + delete columns, which opens the Add
+        Product dialog, and a sync icon over the Shops column, which resolves
+        the shop URLs that are still missing. Kept as a real table row (not a
+        bar above the table) so each action lines up with the column it acts
+        on."""
         # Blank, non-interactive cells for the data columns (0-5): enabled but
         # not selectable/editable/draggable, so this row can't be picked up by
-        # the drag-and-drop reorder and never opens the modify dialog.
+        # the drag-and-drop reorder and never opens the modify dialog. The
+        # Shops cell keeps its blank item too — the button below is a cell
+        # *widget*, drawn on top, and the item is what keeps the cell inert.
         for col in range(6):
             blank = QTableWidgetItem("")
             blank.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.product_table.setItem(row, col, blank)
+
+        # Resolve URLs, centered over the Shops column (4). Recreated on every
+        # load_products() rather than reparented: reparenting a widget whose
+        # container setCellWidget is about to destroy is fragile, and rebuilding
+        # per row is what every other cell widget in this table already does.
+        # Hence _resolver_busy, which outlives the widget, decides `enabled`.
+        shops_container = QWidget()
+        shops_layout = QHBoxLayout(shops_container)
+        shops_layout.setContentsMargins(0, 0, 0, 0)
+        shops_layout.addStretch()
+
+        self.update_urls_button = QToolButton()
+        self.update_urls_button.setIcon(icons.sync_icon())
+        self.update_urls_button.setIconSize(QSize(18, 18))
+        # Wider than tall on purpose: the Shops column is the widest in the
+        # table, so a square hit area looks lost in it, and the row is capped at
+        # 24 px (see load_products) — the height cannot grow to match. The
+        # explicit size also stops autoRaise's hover frame from hugging the
+        # glyph so tightly that it reads as a rendering artefact. The width
+        # matches the '+' below, so the table's two row-wide actions carry the
+        # same visual weight.
+        self.update_urls_button.setFixedSize(72, 22)
+        self.update_urls_button.setAutoRaise(True)
+        self.update_urls_button.setToolTip(tr("main.tooltip_update_urls"))
+        self.update_urls_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.update_urls_button.setEnabled(not self._resolver_busy)
+        self.update_urls_button.clicked.connect(self.on_update_urls_clicked)
+
+        shops_layout.addWidget(self.update_urls_button)
+        shops_layout.addStretch()
+        self.product_table.setCellWidget(row, 4, shops_container)
 
         # A single '+' button spanning the edit (6) and delete (7) columns.
         self.product_table.setSpan(row, 6, 1, 2)
@@ -576,7 +607,14 @@ class MainWindow(QWidget):
         add_button.setText("＋")
         add_button.setAutoRaise(True)
         add_button.setToolTip(tr("main.tooltip_add_product"))
-        add_button.setStyleSheet("QToolButton { font-size: 16px; font-weight: bold; }")
+        add_button.setStyleSheet("QToolButton { font-size: 18px; font-weight: bold; }")
+        # Stretched across the full width of the spanned cell, so the hit area
+        # matches the two columns the span already covers. Expanding rather than
+        # a fixed width because columns 6 and 7 are ResizeToContents: their width
+        # follows the pencil and bin glyphs and is not known here. Height is
+        # capped like the sync button — the row is 24 px (see load_products).
+        add_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        add_button.setFixedHeight(22)
         add_button.clicked.connect(self.open_add_product_dialog)
         layout.addWidget(add_button)
         self.product_table.setCellWidget(row, 6, container)
@@ -875,7 +913,16 @@ class MainWindow(QWidget):
         self.load_products()
         self.start_resolver_worker([product_id])
 
+    def _set_resolver_busy(self, busy: bool):
+        """Lock the resolve-URLs icon while a pass is in flight, so a second
+        pass can't be launched over the first. The flag outlives the button,
+        which load_products() destroys and recreates (see _set_add_row)."""
+        self._resolver_busy = busy
+        if self.update_urls_button is not None:
+            self.update_urls_button.setEnabled(not busy)
+
     def start_resolver_worker(self, product_ids: list):
+        self._set_resolver_busy(True)
         self._set_status("main.status_resolving", count=len(product_ids))
 
         worker = ResolverWorker(product_ids)
@@ -924,6 +971,11 @@ class MainWindow(QWidget):
         here. Every placeholder is a count or a shop name, both untranslated, so
         _retranslate_ui can redraw this line in a new language from the stored
         key and kwargs alone."""
+        # Cleared before the load_products() below, so the row is rebuilt with
+        # the icon already enabled. ResolverWorker.run emits finished *or*
+        # error, never both, so this and on_resolver_error cover every exit.
+        self._set_resolver_busy(False)
+
         resolved = sum(
             1 for shops in results.values()
             for outcome in shops.values() if outcome.url
@@ -952,6 +1004,7 @@ class MainWindow(QWidget):
         self.load_products()
 
     def on_resolver_error(self, message: str):
+        self._set_resolver_busy(False)
         self._set_status("main.status_resolver_error", message=message)
 
     # =========================================
@@ -962,8 +1015,15 @@ class MainWindow(QWidget):
         worker = RetryWorker()
         worker.signals.progress.connect(self.on_resolver_progress)
         worker.signals.finished.connect(self.on_retry_finished)
-        worker.signals.error.connect(self.on_resolver_error)
+        worker.signals.error.connect(self.on_retry_error)
         self.thread_pool.start(worker)
+
+    def on_retry_error(self, message: str):
+        """Same message as a foreground resolver failure, but it must not touch
+        _resolver_busy: this pass runs on its own 5-minute timer, and letting it
+        unlock the icon could re-enable it while a foreground pass is still in
+        flight — which is exactly what the lock is there to prevent."""
+        self._set_status("main.status_resolver_error", message=message)
 
     def on_retry_finished(self, resolved_count: int):
         if resolved_count > 0:

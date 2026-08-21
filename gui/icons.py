@@ -79,6 +79,19 @@ _RESTART_SVG = (
     b'A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'
 )
 
+# Double circular arrow (Material "sync"), for the resolve-URLs button in the
+# Shops column. Grey: it re-runs a search, it destroys nothing. Deliberately a
+# different glyph from _RESTART_SVG, which already owns the single circular
+# arrow over in the bot transport row — two distinct actions, two distinct
+# glyphs.
+_SYNC_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8'
+    b'l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6'
+    b' 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>'
+    b'</svg>'
+)
+
 
 # =========================================================
 # RENDERING
@@ -138,3 +151,8 @@ def stop_icon() -> QIcon:
 def restart_icon() -> QIcon:
     """Grey circular arrow — Restart Bot, shown in place of Start while paused."""
     return render_svg_icon(_RESTART_SVG)
+
+
+def sync_icon() -> QIcon:
+    """Grey double arrow — resolve missing shop URLs, in the Shops column."""
+    return render_svg_icon(_SYNC_SVG)

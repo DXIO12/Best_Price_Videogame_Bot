@@ -19,7 +19,6 @@
     "btn_add_product": "Añadir Producto",
     "btn_delete_product": "Eliminar Producto",
     "btn_modify_product": "Modificar Producto",
-    "btn_update_urls": "Actualizar URLs",
     "btn_start_bot": "Iniciar Bot",
     "btn_stop_bot": "Detener Bot",
     "btn_pause_bot": "Pausar Bot",
@@ -35,6 +34,7 @@
 
     "tooltip_settings": "Ajustes",
     "tooltip_add_product": "Añadir un producto nuevo",
+    "tooltip_update_urls": "Buscar las URLs de tienda que faltan, de todos los productos",
     "tooltip_edit_product": "Editar este producto",
     "tooltip_delete_product": "Eliminar este producto",
     "tooltip_header_shops": "Iconos de estado de tienda (pasa el cursor para ver detalles):\n✖  todavía sin URL\n⏳  la URL falló — reintento programado\n⚠ (rojo)  la URL falló — reintentos agotados\n❗ (amarillo)  sin precio (producto no disponible)",
