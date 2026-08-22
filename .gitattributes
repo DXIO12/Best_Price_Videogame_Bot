@@ -1,0 +1,7 @@
+# Windows shells choke on LF-only scripts in ways that are hard to diagnose
+# (a label or a caret continuation silently mis-parses), so these two are
+# checked out with CRLF regardless of platform. Everything else is normalised
+# to LF in the repository and left to git's own detection on checkout.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf

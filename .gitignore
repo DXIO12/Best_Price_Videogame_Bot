@@ -12,6 +12,7 @@ __pycache__/
 .AI/
 handoff.md
 improvements.md
+launcher_setup_notes.md
 
 # =========================================
 # Database
@@ -74,6 +75,10 @@ project_tests/
 # =========================================
 # Build artifacts (PyInstaller)
 # =========================================
+# `build/` here is PyInstaller's own `--workpath` default, created at the repo
+# root during a build and safe to delete. The *scripts* that drive the build
+# live in `packaging/` and are tracked — they used to sit in `build/`, where
+# this very line silently hid every new file added to them.
 dist/
 build/
 *.spec
