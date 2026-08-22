@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 from application.shops.price_utils import extract_price
+
+log = get_logger("shops.mediamarkt")
 
 
 def get_mediamarkt_price(url):
@@ -48,5 +51,5 @@ def get_mediamarkt_price(url):
             return extract_price(price_text)
 
     except Exception as e:
-        print(f"MediaMarkt scraper error: {e}")
+        log.error(f"MediaMarkt scraper error: {e}")
         return None

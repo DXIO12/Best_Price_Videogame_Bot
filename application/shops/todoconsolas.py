@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 from application.shops.price_utils import extract_price
+
+log = get_logger("shops.todoconsolas")
 
 
 # The product page shows the current price and, right below it, the "PVPR"
@@ -34,5 +37,5 @@ def get_todoconsolas_price(url):
             return extract_price(price_text)
 
     except Exception as e:
-        print(f"TodoConsolas scraper error: {e}")
+        log.error(f"TodoConsolas scraper error: {e}")
         return None

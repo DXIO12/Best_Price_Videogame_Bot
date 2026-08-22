@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 import html as html_lib
 import re
+
+log = get_logger("shops.price_utils")
 
 
 def extract_price(text: str) -> float | None:
@@ -69,5 +72,5 @@ def extract_price(text: str) -> float | None:
         return None
 
     except Exception as e:
-        print(f"Price extraction error: {e}")
+        log.error(f"Price extraction error: {e}")
         return None

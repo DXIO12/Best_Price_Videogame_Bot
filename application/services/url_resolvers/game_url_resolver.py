@@ -3,6 +3,7 @@
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from application.services.url_resolvers.resolution import (
     is_digital,
@@ -17,6 +18,8 @@ from application.services.url_resolvers.resolution import (
 )
 from application.shops.price_utils import extract_price
 from urllib.parse import quote, unquote_plus
+
+log = get_logger("resolver.game")
 
 BASE_URL = "https://www.game.es"
 
@@ -235,7 +238,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
             page.wait_for_selector(RESULTS_SELECTOR, state="attached", timeout=20000)
             page.wait_for_selector(CARD_READY_SELECTOR, state="attached", timeout=10000)
         except PlaywrightTimeout:
-            print("[Game] Search results did not render.")
+            log.warning("Search results did not render.")
             browser.close()
             return search_failed()
 
@@ -290,12 +293,12 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
         if not candidates:
             browser.close()
             if used_matches:
-                print(f"[Game] Only second-hand copies: {used_matches[0]}")
+                log.debug(f"Only second-hand copies: {used_matches[0]}")
                 return only_used()
             # The autocomplete answered, so the shop has been heard from: it
             # pads short result lists with loosely related games, and none of
             # them cleared the relevance floor.
-            print(f"[Game] No new {platform} copy matching '{query}'.")
+            log.debug(f"No new {platform} copy matching '{query}'.")
             return not_found()
 
         # Step 2 — keep only the top-scoring candidates
@@ -306,7 +309,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
             browser.close()
             href = top_candidates[0][1]
             result = href if href.startswith("http") else f"{BASE_URL}{href}"
-            print(f"[Game] Resolved (single top): {result}")
+            log.debug(f"Resolved (single top): {result}")
             return resolved(result)
 
         # Step 3 — visit each top candidate and read its price; pick cheapest.
@@ -330,7 +333,7 @@ def resolve_game_product_url(search_url: str, platform: str | None = None):
                     best_price = price
                     best_href = full_url
             except Exception as e:
-                print(f"[Game]   Price read error for {full_url}: {e}")
+                log.error(f"  Price read error for {full_url}: {e}")
 
         browser.close()
 

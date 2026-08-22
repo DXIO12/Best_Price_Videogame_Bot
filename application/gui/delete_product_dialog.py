@@ -1,3 +1,4 @@
+from application.config.logger import get_logger
 from application.services.product_service import (
     delete_products,
     get_products,
@@ -20,6 +21,8 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QWidget,
 )
+
+log = get_logger("gui.delete")
 
 class DeleteProductDialog(QDialog):
 
@@ -164,7 +167,7 @@ class DeleteProductDialog(QDialog):
                 delete_product_platforms(pid, plats)
                 name = product_names.get(pid, str(pid))
                 plats_str = ", ".join(plats) if plats else "all platforms"
-                print(f"===================================")
-                print(f"[Delete] '{name}' — platforms removed: {plats_str}")
+                log.rule()
+                log.info(f"'{name}' — platforms removed: {plats_str}")
             self.product_deleted.emit()
             self.close()

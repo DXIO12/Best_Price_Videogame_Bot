@@ -3,8 +3,11 @@
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from urllib.parse import unquote_plus
+
+log = get_logger("resolver.xtralife")
 
 BASE_URL = "https://www.xtralife.com"
 
@@ -67,7 +70,7 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             page.locator('input[placeholder="Buscar"]').press("Enter")
             page.wait_for_timeout(3000)
         except PlaywrightTimeout:
-            print("[Xtralife] Search input not found.")
+            log.warning("Search input not found.")
             browser.close()
             return None
 
@@ -78,7 +81,7 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             juegos_filter.click(timeout=5000)
             page.wait_for_timeout(2000)
         except Exception as e:
-            print(f"[Xtralife] Juegos filter error: {e}")
+            log.warning(f"Juegos filter error: {e}")
 
         # Platform filter
         if platform:
@@ -116,13 +119,13 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
                             ).first.click(timeout=5000)
                             page.wait_for_timeout(3000)
                         except Exception as e:
-                            print(f"[Xtralife] Apply filter error: {e}")
+                            log.warning(f"Apply filter error: {e}")
                     else:
                         page.keyboard.press("Escape")
                         page.wait_for_timeout(500)
 
                 except Exception as e:
-                    print(f"[Xtralife] Platform filter error: {e}")
+                    log.warning(f"Platform filter error: {e}")
 
         # Grab product cards
         try:
@@ -134,7 +137,7 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
                 'a.flex.ng-star-inserted[href*="/producto/"]'
             ).all()[:5]
         except PlaywrightTimeout:
-            print("[Xtralife] No product cards found.")
+            log.warning("No product cards found.")
             browser.close()
             return None
 
@@ -174,7 +177,7 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
 
         result_href = best_href or first_href
         if not result_href:
-            print("[Xtralife] No valid product URL found.")
+            log.debug("No valid product URL found.")
             return None
 
         result = (

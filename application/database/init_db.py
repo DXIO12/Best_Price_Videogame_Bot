@@ -1,6 +1,12 @@
 from sqlalchemy import text
+
+from application.config.logger import get_logger
+from application.config.runtime_config import init_runtime_mode
 from application.database.db import engine, SessionLocal
 from application.database.models import Base, Platform, product_platforms
+
+init_runtime_mode()
+log = get_logger("database")
 
 Base.metadata.create_all(bind=engine)
 
@@ -49,4 +55,4 @@ for name in _PLATFORMS:
 db.commit()
 db.close()
 
-print("Database initialised.")
+log.info("Database initialised.")

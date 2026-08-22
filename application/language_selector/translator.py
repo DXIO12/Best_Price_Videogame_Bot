@@ -29,7 +29,10 @@ import json
 import os
 from pathlib import Path
 
+from application.config.logger import get_logger
 from application.config.runtime_config import base_dir, read_config_json
+
+log = get_logger("lang")
 
 
 DEFAULT_LANGUAGE = "en"
@@ -86,7 +89,7 @@ def _catalog(code: str) -> dict:
             if isinstance(loaded, dict):
                 data = loaded
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[lang] Could not read {path}: {exc}")
+            log.error(f"Could not read {path}: {exc}")
 
     _catalogs[code] = data
     return data
@@ -191,7 +194,7 @@ def init_language() -> str:
     """Resolve and activate the language at startup. Returns the code."""
     code = resolve_language()
     set_language(code)
-    print(f"[lang] Language: {code}")
+    log.info(f"Language: {code}")
     return code
 
 
@@ -223,7 +226,7 @@ def tr(key: str, **kwargs) -> str:
         if text is None:
             if key not in _reported_missing:
                 _reported_missing.add(key)
-                print(f"[lang] Missing translation key: {key}")
+                log.warning(f"Missing translation key: {key}")
             return key
 
     if not kwargs:
@@ -240,5 +243,5 @@ def tr(key: str, **kwargs) -> str:
                 return english.format(**kwargs)
             except (KeyError, IndexError, ValueError):
                 pass
-        print(f"[lang] Bad placeholders in '{key}' for language '{code}'.")
+        log.warning(f"Bad placeholders in '{key}' for language '{code}'.")
         return text

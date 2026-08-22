@@ -4,9 +4,11 @@ Central place that resolves the app's ``debug_mode`` flag and applies its two
 runtime effects:
 
 * **Browsers**: visible (debug) vs headless (release) — see ``resolve_headless``.
-* **Console/logs**: a real terminal + teed log file (debug) vs a silent
-  background process that still writes a log file (release) — see
-  ``init_runtime_mode``.
+* **Console/logs**: a real terminal plus a log file (debug) vs a silent
+  background process that still writes one (release) — see ``init_runtime_mode``.
+  The mode also picks the log level: DEBUG keeps the per-shop narration, RELEASE
+  logs only what is worth reading later. The handlers themselves live in
+  ``application.config.logger``; this module owns *where* the file goes.
 
 Source of truth is the DB ``Setting.debug_mode`` column; it is mirrored to
 ``config.json`` for external tooling. Resolution precedence (first wins):
@@ -22,8 +24,11 @@ without import cycles.
 import json
 import os
 import sys
-import traceback
 from pathlib import Path
+
+from application.config.logger import get_logger, install_excepthook, setup_logging
+
+_log = get_logger("runtime")
 
 
 # ---------------------------------------------------------------------------
@@ -53,11 +58,39 @@ def config_json_path() -> Path:
     return base_dir() / "application" / "bot" / "config.json"
 
 
-def log_file_path() -> Path:
-    """Log file location: ``<base>/logs/price_bot.log`` (repo root in dev, next
-    to the executable when frozen). The ``logs`` dir is created on demand by
-    ``init_runtime_mode``."""
-    return base_dir() / "logs" / "price_bot.log"
+def process_name(process: str | None = None) -> str:
+    """Which process this is — "gui", "bot", … — used to name its log file.
+
+    An explicit argument wins; otherwise ``PRICE_BOT_PROCESS`` (exported by the
+    launcher scripts, so the one-shot helpers they run land in the same file as
+    the app they are about to start); otherwise a neutral default."""
+    if process:
+        return process
+    return os.environ.get("PRICE_BOT_PROCESS", "").strip() or "app"
+
+
+def log_dir() -> Path:
+    """Where log files go: ``<base>/logs`` (repo root in dev, next to the
+    executable when frozen).
+
+    ``PRICE_BOT_LOG_DIR`` overrides it outright. That is what keeps a test
+    harness out of the real log: importing ``application.gui.main_window`` runs
+    ``init_runtime_mode`` at module level, and without the override its output
+    is written straight into the log the running app uses."""
+    override = os.environ.get("PRICE_BOT_LOG_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return base_dir() / "logs"
+
+
+def log_file_path(process: str | None = None) -> Path:
+    """Log file for one process: ``<log_dir>/price_bot_<process>.log``.
+
+    One file per process, not one shared file. The GUI and the background bot
+    can run at the same time, and a rotating file handler is not safe across
+    processes — two of them rolling the same file over can truncate each other's
+    output. Separate files also stop the two narrations from interleaving."""
+    return log_dir() / f"price_bot_{process_name(process)}.log"
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +117,7 @@ def write_config_settings(values: dict) -> None:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, ensure_ascii=False)
     except OSError as exc:  # pragma: no cover - best effort mirror
-        print(f"[runtime_config] Could not write config.json mirror: {exc}")
+        _log.error(f"Could not write config.json mirror: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -141,42 +174,6 @@ def resolve_headless() -> bool:
 # Console + log setup
 # ---------------------------------------------------------------------------
 
-class _Tee:
-    """Minimal write-only stream that fans out to several underlying streams.
-
-    Tolerates a ``None`` primary stream (a windowed exe has no stdout), so
-    output still reaches the log file in release mode."""
-
-    # Python's traceback printer skips a stderr replacement that has no
-    # ``encoding`` attribute — without these, an unhandled exception in a Qt
-    # slot aborts the process with no traceback anywhere (neither console nor
-    # log), which makes such crashes almost impossible to diagnose.
-    encoding = "utf-8"
-    errors = "replace"
-
-    def __init__(self, *streams):
-        self._streams = [s for s in streams if s is not None]
-
-    def write(self, data):
-        for stream in self._streams:
-            try:
-                stream.write(data)
-                stream.flush()
-            except Exception:
-                pass
-        return len(data)
-
-    def flush(self):
-        for stream in self._streams:
-            try:
-                stream.flush()
-            except Exception:
-                pass
-
-    def isatty(self):
-        return False
-
-
 def _attach_windows_console(debug: bool) -> None:
     """On Windows, allocate a real console when debug is on and none exists.
 
@@ -200,56 +197,33 @@ def _attach_windows_console(debug: bool) -> None:
         pass
 
 
-def _install_excepthook() -> None:
-    """Log unhandled exceptions instead of letting Qt abort the process.
-
-    When an exception escapes a Qt slot and ``sys.excepthook`` is still the
-    default one, PyQt calls ``qFatal()``: the process dies with a bare
-    "Unhandled Python exception" / "Aborted (core dumped)" and the traceback
-    goes straight to the C-level stderr, so nothing reaches the log file — the
-    crash is effectively undiagnosable. Installing our own hook makes PyQt hand
-    the exception to us instead, so the traceback is teed to the log and the
-    GUI survives."""
-    def hook(exc_type, exc, tb):
-        if issubclass(exc_type, KeyboardInterrupt):
-            sys.__excepthook__(exc_type, exc, tb)
-            return
-        print("[error] Unhandled exception:", file=sys.stderr)
-        traceback.print_exception(exc_type, exc, tb, file=sys.stderr)
-
-    sys.excepthook = hook
-
-
 _initialised = False
 
 
-def init_runtime_mode() -> bool:
+def init_runtime_mode(process: str | None = None) -> bool:
     """Apply the execution mode at process startup. Idempotent.
 
     Returns the resolved debug flag. Attaches a Windows console when needed and
-    tees stdout/stderr to ``logs/price_bot.log`` so release mode is never
-    silent. Creates the ``logs`` directory on demand (works for both a fresh
-    source checkout and next to a packaged executable)."""
+    sets up logging: a rotating file for this process plus the console, at DEBUG
+    or INFO depending on the mode. Creates the ``logs`` directory on demand
+    (works for both a fresh source checkout and next to a packaged executable).
+
+    ``process`` names the log file — pass "gui" or "bot" from the entry points."""
     global _initialised
     debug = get_debug_mode()
     if _initialised:
         return debug
     _initialised = True
 
+    # Before setup_logging, which captures whatever sys.stdout is by then: on
+    # Windows this is what creates the console the handler will write to.
     _attach_windows_console(debug)
 
-    try:
-        log_path = log_file_path()
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_fh = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
-        sys.stdout = _Tee(sys.stdout, log_fh)
-        sys.stderr = _Tee(sys.stderr, log_fh)
-    except Exception:
-        pass
-
-    _install_excepthook()
+    name = process_name(process)
+    setup_logging(name, debug, log_file_path(name))
+    install_excepthook()
 
     mode = "DEBUG (visible browsers, console + logs)" if debug \
         else "RELEASE (headless, background)"
-    print(f"[runtime_config] Execution mode: {mode}")
+    _log.info(f"Execution mode: {mode}")
     return debug

@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 from application.shops.price_utils import extract_price
+
+log = get_logger("shops.carrefour")
 
 
 # The buybox has two price spans:
@@ -37,7 +40,7 @@ def get_carrefour_price(url):
                 page.locator('button#onetrust-accept-btn-handler').click(timeout=8000)
                 page.wait_for_timeout(2000)
             except:
-                print("Cookie button not found or already accepted.")
+                log.debug("Cookie button not found or already accepted.")
 
             price_text = None
 
@@ -57,5 +60,5 @@ def get_carrefour_price(url):
             return extract_price(price_text)
 
     except Exception as e:
-        print(f"Carrefour scraper error: {e}")
+        log.error(f"Carrefour scraper error: {e}")
         return None

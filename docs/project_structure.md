@@ -3,7 +3,8 @@
 ```
 price-bot/
 │
-├── application/           ← all runtime code lives here; this is the import root
+├── application/           ← all runtime code lives here (a package: has __init__.py)
+│   ├── __init__.py
 │   │
 │   ├── bot/
 │   │   ├── __init__.py
@@ -13,6 +14,7 @@ price-bot/
 │   │
 │   ├── config/
 │   │   ├── __init__.py
+│   │   ├── logger.py
 │   │   └── runtime_config.py
 │   │
 │   ├── database/
@@ -93,8 +95,10 @@ price-bot/
 │
 ├── project_tests/         ← gitignored
 │
-├── logs/                  ← runtime log (gitignored)
-│   └── price_bot.log
+├── logs/                  ← runtime logs, one file per process (gitignored)
+│   ├── price_bot_gui.log
+│   ├── price_bot_gui.log.1   ← rotation backups, 3 at most
+│   └── price_bot_bot.log
 │
 ├── venv/                  ← gitignored
 │
@@ -109,13 +113,19 @@ price-bot/
 └── requirements.txt
 ```
 
-**`application/` is the import root, not the repo root.** Every module imports its
-siblings as top-level packages (`from bot.bot import ...`, `from shops.amazon import
-...`, `from database.db import ...`), so `application/` — not `price-bot/` — is the
-directory that has to be on `sys.path`. In practice that means launchers `cd` into
-`application/` before running `python -m gui.main_window`, PyInstaller is pointed at
-`application/gui/main_window.py`, and `project_tests/` prepends `<repo>/application`
-to `sys.path` (`APP_ROOT`) before importing anything from the app.
+**The repo root is the import root, and `application/` is a package.** Every internal
+import is absolute and `application.`-prefixed (`from application.bot.bot import ...`,
+`from application.shops.amazon import ...`), so `price-bot/` — not `application/` — is
+the directory that has to be on `sys.path`. The entry point is
+`python -m application.gui.main_window`, PyInstaller is pointed at
+`application/gui/main_window.py`, and `project_tests/` prepends the repo root to
+`sys.path` before importing anything from the app.
+
+**Code lives under `application/`; everything the app writes does not.**
+`logs/`, `.env`, `venv/` and `dist/` stay at the repo root, which is what
+`config.runtime_config.base_dir()` resolves to (and, in a packaged build, the
+directory next to the executable). The one exception is `tracker.db`, which
+`database/db.py` places next to its own module.
 
 ---
 
@@ -142,7 +152,25 @@ package (GUI, bot, shops, resolvers) can import it without creating a cycle.
 | File | Description |
 | ------ | ----------- |
 | `__init__.py` | Package marker. |
-| `runtime_config.py` | Resolves the effective `debug_mode` flag (`PRICE_BOT_DEBUG` env → DB `Setting.debug_mode` → `config.json` → frozen default) and applies its two effects: `resolve_headless()` for Playwright, and `init_runtime_mode()` for the console + log tee. Also owns the path helpers `base_dir()`, `config_json_path()` and `log_file_path()`. **`base_dir()` is `parent.parent` of this file, which since the `application/` move resolves to `application/`, not the repo root** — so `logs/` and the dev `config.json` now live under `application/`. |
+| `runtime_config.py` | Resolves the effective `debug_mode` flag (`PRICE_BOT_DEBUG` env → DB `Setting.debug_mode` → `config.json` → frozen default) and applies its two effects: `resolve_headless()` for Playwright, and `init_runtime_mode(process)` for the console + log setup. Owns the *paths*: `base_dir()` (repo root in dev, next to the executable when frozen), `config_json_path()`, `log_dir()` and `log_file_path(process)`. Entry points pass their own name — `init_runtime_mode("gui")` / `("bot")` — which is what picks the log file. |
+| `logger.py` | Owns the *handlers*. `get_logger("<area>")` returns the `price_bot.<area>` logger every module writes through; `setup_logging()` attaches a `RotatingFileHandler` (1 MiB × 3 backups) plus a console handler, and redirects `sys.stdout` / `sys.stderr` into the logger so third-party output still reaches the file. Also `install_excepthook()`. Deliberately imports nothing from the app — it is handed the path it should write to, which is what lets `runtime_config` import it without a cycle. |
+
+**Log levels are the volume knob, and `debug_mode` turns it.** A release run logs at
+`INFO`, a debug run at `DEBUG`. The per-shop narration (`Scraping Amazon…`,
+`54.9€ — above target.`, `already has URL, skipping`) is all `DEBUG`, so it never
+reaches a release log — that chatter was ~70% of the old log's volume. `INFO` keeps
+the story worth reading later: alerts, best prices, resolved URLs, and the changes the
+user makes in the GUI. `WARNING` is "you should know, but nothing crashed" (no URL set,
+no scraper, a search that did not render); `ERROR` is failures and unhandled exceptions.
+
+Two formats on purpose: the console gets the bare message, so a terminal session reads
+exactly like the old `print()` output, while the file gets `timestamp level [logger]`.
+Separators and blank lines are console-only — a timestamped file does not need them.
+
+Environment overrides: `PRICE_BOT_LOG_DIR` moves the whole directory (this is how a
+test harness stays out of the real log — importing `application.gui.main_window` runs
+`init_runtime_mode` at module level), and `PRICE_BOT_PROCESS` names the process for
+helpers that do not pass one, such as `init_db`.
 
 ---
 
@@ -323,8 +351,10 @@ Created by `build/build_exe.sh` (or `.bat`) via PyInstaller. Not committed to th
 ### `project_tests/` *(gitignored)*
 
 Manual and unit tests, run from the repo root (e.g. `python -m unittest discover -s project_tests`).
-Each module prepends `<repo>/application` to `sys.path` as `APP_ROOT` before importing app code —
-without it the `services.*` / `shops.*` / `bot.*` imports don't resolve.
+Each module prepends the repo root to `sys.path` before importing app code — without it
+the `application.*` imports don't resolve. A harness that imports GUI modules should also
+set `PRICE_BOT_LOG_DIR`: `application.gui.main_window` calls `init_runtime_mode` at module
+level, so importing it writes into the real log otherwise.
 
 | File | Description |
 | ------ | ----------- |

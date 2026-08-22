@@ -1,3 +1,4 @@
+from application.config.logger import get_logger
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -18,6 +19,8 @@ from application.database.db import SessionLocal
 from application.database.models import Setting
 from application.config.runtime_config import get_debug_mode, write_config_settings
 from application.language_selector import available_languages, get_language, set_language, tr
+
+log = get_logger("gui.settings")
 
 
 DEFAULTS = {
@@ -288,18 +291,18 @@ class SettingsBotDialog(QDialog):
         # window, to relabel itself) already sees the new language.
         set_language(language)
 
-        print("===================================")
-        print(f"[Settings Bot] Check Interval:          {interval} min")
-        print(f"[Settings Bot] Notify Only Best Price:  {notify_best}")
-        print(f"[Settings Bot] Repeat Notifications:    {repeat}")
+        log.rule()
+        log.info(f"Check Interval:          {interval} min")
+        log.info(f"Notify Only Best Price:  {notify_best}")
+        log.info(f"Repeat Notifications:    {repeat}")
         if repeat:
-            print(f"[Settings Bot] Repeat After:            {repeat_mins} min")
-        print(f"[Settings Bot] Parallel Scraping:       {parallel}")
+            log.info(f"Repeat After:            {repeat_mins} min")
+        log.info(f"Parallel Scraping:       {parallel}")
         if parallel:
-            print(f"[Settings Bot] Parallel Workers:        {workers}")
-        print(f"[Settings Bot] Debug Mode:              {debug}")
-        print(f"[Settings Bot] Language:                {language}")
-        print("===================================")
+            log.info(f"Parallel Workers:        {workers}")
+        log.info(f"Debug Mode:              {debug}")
+        log.info(f"Language:                {language}")
+        log.rule()
 
         self.settings_saved.emit()
         self.accept()

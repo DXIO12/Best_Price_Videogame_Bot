@@ -1,7 +1,10 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from urllib.parse import unquote_plus
+
+log = get_logger("resolver.wakkap")
 
 BASE_URL = "https://wakkap.com/search/filter/on-sale"
 
@@ -46,7 +49,7 @@ def resolve_wakkap_product_url(search_url: str, platform: str | None = None):
             page.locator('input.search-box').press("Enter")
             page.wait_for_timeout(3000)
         except PlaywrightTimeout:
-            print(f"[Wakkap] Search input not found.")
+            log.warning(f"Search input not found.")
             browser.close()
             return None
 
@@ -64,7 +67,7 @@ def resolve_wakkap_product_url(search_url: str, platform: str | None = None):
             page.locator('div.select-items div.item[value="game"]').first.click(timeout=5000)
             page.wait_for_timeout(1000)
         except Exception as e:
-            print(f"[Wakkap] Juegos filter error: {e}")
+            log.warning(f"Juegos filter error: {e}")
 
         # Apply platform filter
         if platform:
@@ -78,7 +81,7 @@ def resolve_wakkap_product_url(search_url: str, platform: str | None = None):
                     ).first.click(timeout=5000)
                     page.wait_for_timeout(1000)
                 except Exception as e:
-                    print(f"[Wakkap] Platform filter error: {e}")
+                    log.warning(f"Platform filter error: {e}")
 
         # Ensure "Mostrar sólo disponibles" is checked
         try:
@@ -102,7 +105,7 @@ def resolve_wakkap_product_url(search_url: str, platform: str | None = None):
             cards = page.locator('div.cmp-thumbnail-card').all()
 
             if not cards:
-                print("[Wakkap] No product cards found.")
+                log.warning("No product cards found.")
                 browser.close()
                 return None
 
@@ -111,7 +114,7 @@ def resolve_wakkap_product_url(search_url: str, platform: str | None = None):
             href = page.url
 
         except PlaywrightTimeout:
-            print("[Wakkap] No products found.")
+            log.debug("No products found.")
             browser.close()
             return None
 

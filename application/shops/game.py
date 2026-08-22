@@ -1,3 +1,4 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 
 # The DOM knowledge for game.es lives with the URL resolver, which has to read a
@@ -9,6 +10,8 @@ from application.services.url_resolvers.game_url_resolver import (  # noqa: F401
     PRICE_SELECTOR,
     read_game_price,
 )
+
+log = get_logger("shops.game")
 
 
 def get_game_price(url):
@@ -32,5 +35,5 @@ def get_game_price(url):
             return read_game_price(page)
 
     except Exception as e:
-        print(f"Game scraper error: {e}")
+        log.error(f"Game scraper error: {e}")
         return None

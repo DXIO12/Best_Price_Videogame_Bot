@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 from application.shops.price_utils import extract_price
+
+log = get_logger("shops.wakkap")
 
 
 def get_wakkap_price(url):
@@ -46,5 +49,5 @@ def get_wakkap_price(url):
             return extract_price(price_text)
 
     except Exception as e:
-        print(f"Wakkap scraper error: {e}")
+        log.error(f"Wakkap scraper error: {e}")
         return None

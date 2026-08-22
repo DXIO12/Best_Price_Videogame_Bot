@@ -21,6 +21,7 @@ from application.shops.carrefour import get_carrefour_price
 from application.shops.todoconsolas import get_todoconsolas_price
 from application.shops.playwright_utils import stop_browser
 
+from application.config.logger import get_logger
 from application.config.runtime_config import get_debug_mode
 from application.language_selector import tr
 
@@ -35,6 +36,8 @@ from application.database.models import Product, ProductShop, Setting, product_p
 # =========================================================
 
 load_dotenv()
+
+log = get_logger("bot")
 
 
 # =========================================================
@@ -186,7 +189,7 @@ def _wait_while_paused(pause_event, stop_event) -> bool:
     if pause_event is None or not pause_event.is_set():
         return stop_event is None or not stop_event.is_set()
 
-    print("Pause requested — holding at the next checkpoint.")
+    log.debug("Pause requested — holding at the next checkpoint.")
 
     while pause_event.is_set():
         if stop_event is None:
@@ -194,7 +197,7 @@ def _wait_while_paused(pause_event, stop_event) -> bool:
         elif stop_event.wait(0.2):
             return False
 
-    print("Resuming price check.")
+    log.debug("Resuming price check.")
     return stop_event is None or not stop_event.is_set()
 
 
@@ -203,8 +206,8 @@ def _wait_while_paused(pause_event, stop_event) -> bool:
 # =========================================================
 
 def check_prices(stop_event=None, pause_event=None):
-    print("===================================")
-    print("Checking product prices...")
+    log.rule()
+    log.info("Checking product prices...")
 
     settings = load_settings()
     db = SessionLocal()
@@ -222,7 +225,7 @@ def check_prices(stop_event=None, pause_event=None):
         )
 
         if not products:
-            print("No products in database.")
+            log.warning("No products in database.")
             return
 
         records_by_product = {
@@ -247,7 +250,7 @@ def check_prices(stop_event=None, pause_event=None):
 
         for product in products:
             if not _wait_while_paused(pause_event, stop_event):
-                print("Stop requested — halting price check.")
+                log.warning("Stop requested — halting price check.")
                 break
 
             name = product.name
@@ -255,11 +258,11 @@ def check_prices(stop_event=None, pause_event=None):
             shop_records = records_by_product[product.id]
 
             if not shop_records:
-                print(f"No shops configured for {name}, skipping.")
+                log.warning(f"No shops configured for {name}, skipping.")
                 continue
 
-            print("===================================")
-            print(f"\nProduct: {name} | Target: {target_price}€")
+            log.rule()
+            log.info(f"Product: {name} | Target: {target_price}€")
 
             if settings["notify_only_best_price"]:
                 _check_best_price(db, name, target_price, shop_records, settings,
@@ -272,8 +275,8 @@ def check_prices(stop_event=None, pause_event=None):
         db.close()
         stop_browser()
 
-    print("===================================")
-    print("Price check complete.")
+    log.rule()
+    log.info("Price check complete.")
 
 
 # =========================================================
@@ -299,18 +302,18 @@ def _check_best_price(db, product_name: str, target_price: float,
             mark_unavailable(db, record)
 
     if not hits:
-        print(f"  No prices at or below target for {product_name}.")
+        log.warning(f"  No prices at or below target for {product_name}.")
         return
 
     best_price, best_record = min(hits, key=lambda x: x[0])
 
     if should_notify(best_record, best_price, settings):
-        print(f"  BEST PRICE: {best_price}€ at {best_record.shop}")
+        log.info(f"  BEST PRICE: {best_price}€ at {best_record.shop}")
         send_notification(product_name, best_record.shop,
                           best_price, target_price, best_record.url)
         save_shop_record(db, best_record, best_price, notified=True)
     else:
-        print(f"  Best price {best_price}€ already notified recently.")
+        log.debug(f"  Best price {best_price}€ already notified recently.")
 
 
 # =========================================================
@@ -337,14 +340,14 @@ def _check_all_shops(db, product_name: str, target_price: float,
 
         if price <= target_price:
             if should_notify(record, price, settings):
-                print(f"  ALERT: {record.shop} → {price}€")
+                log.info(f"  ALERT: {record.shop} → {price}€")
                 send_notification(product_name, record.shop,
                                   price, target_price, record.url)
                 notified = True
             else:
-                print(f"  {record.shop}: {price}€ — already notified recently.")
+                log.debug(f"  {record.shop}: {price}€ — already notified recently.")
         else:
-            print(f"  {record.shop}: {price}€ — above target.")
+            log.debug(f"  {record.shop}: {price}€ — above target.")
 
         save_shop_record(db, record, price, notified=notified)
 
@@ -367,11 +370,11 @@ def _scrape(record: ProductShop, prices: dict | None = None) -> float | None:
     scraper = SHOP_FUNCTIONS.get(shop_key)
 
     if scraper is None:
-        print(f"  No scraper for shop '{record.shop}' — skipping.")
+        log.warning(f"  No scraper for shop '{record.shop}' — skipping.")
         return None
 
     if not record.url or not record.url.strip():
-        print(f"  No URL set for {record.shop} — skipping.")
+        log.warning(f"  No URL set for {record.shop} — skipping.")
         return None
 
     return _scrape_url(scraper, record.shop, record.url)
@@ -393,15 +396,17 @@ def _scrape_url(scraper, shop_name: str, url: str) -> float | None:
 
     Takes plain values rather than a ProductShop so the shop name can be used
     for the log lines without touching the ORM."""
-    print(f"  Scraping {shop_name}...")
+    log.debug(f"  Scraping {shop_name}...")
     price, error = _run_scraper(scraper, url)
 
     if error is not None:
-        print(f"  Error scraping {shop_name}: {error}")
+        log.error(f"  Error scraping {shop_name}: {error}")
         return None
 
-    print(f"  {shop_name}: {price}€" if price is not None
-          else f"  {shop_name}: could not retrieve price.")
+    if price is not None:
+        log.debug(f"  {shop_name}: {price}€")
+    else:
+        log.warning(f"  {shop_name}: could not retrieve price.")
     return price
 
 
@@ -505,7 +510,7 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
 
     if not buckets:
         for line in skipped:
-            print(line)
+            log.warning(line)
         return {}
 
     # Longest bucket first (LPT). With more shops than workers, the makespan is
@@ -547,19 +552,22 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
                     # two workers from interleaving halves of the same line.
                     with results_lock:
                         results[record_id] = price
-                        print(_parallel_line(len(results), total, shop_name,
-                                             product_name, price, error, shop_width))
+                        log.debug(_parallel_line(len(results), total, shop_name,
+                                                 product_name, price, error, shop_width))
         finally:
             # Closes this worker's own browsers; a driver cannot be shut down
             # from another thread.
             stop_browser()
 
-    print(f"\nScraping {total} page(s) across {len(buckets)} shop(s) "
-          f"with {worker_count} worker(s)..."
-          f"\nTemporal log. Lines may appear out of product order due to parallelism.\n"
-          f"===============================================")
+    log.blank()
+    log.info(f"Scraping {total} page(s) across {len(buckets)} shop(s) "
+             f"with {worker_count} worker(s)...")
+    # The caveat only earns its place next to the per-job lines it explains, and
+    # those are DEBUG — a release log jumps straight to the summary.
+    log.debug("Temporal log. Lines may appear out of product order due to parallelism.")
+    log.rule("=", 47)
     for line in skipped:
-        print(line)
+        log.warning(line)
 
     started = time.monotonic()
     threads = [
@@ -572,7 +580,7 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
         thread.join()
 
     priced = sum(1 for price in results.values() if price is not None)
-    print(f"Scraped {priced}/{total} price(s) in {time.monotonic() - started:.1f}s.")
+    log.info(f"Scraped {priced}/{total} price(s) in {time.monotonic() - started:.1f}s.")
 
     return results
 
@@ -585,7 +593,7 @@ if __name__ == "__main__":
     from application.config.runtime_config import init_runtime_mode
 
     # Console/log setup + headless resolution before scraping starts.
-    init_runtime_mode()
+    init_runtime_mode("bot")
 
     settings = load_settings()
     interval = settings["check_interval_minutes"]
@@ -593,11 +601,11 @@ if __name__ == "__main__":
     scheduler = BlockingScheduler()
     scheduler.add_job(check_prices, "interval", minutes=interval)
 
-    print("===================================")
-    print("Price tracker bot started.")
-    print(f"Checking every {interval} minutes.")
-    print("Press CTRL+C to stop.")
-    print("===================================")
+    log.rule()
+    log.info("Price tracker bot started.")
+    log.info(f"Checking every {interval} minutes.")
+    log.info("Press CTRL+C to stop.")
+    log.rule()
 
     # Run once immediately, then let the scheduler take over
     check_prices()
