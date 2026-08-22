@@ -2,7 +2,6 @@
   "_meta": {
     "name": "English"
   },
-
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -11,11 +10,9 @@
     "none": "None",
     "n_selected": "{count} selected"
   },
-
   "main": {
     "window_title": "Price Bot",
     "heading": "Best Game Price Tracker",
-
     "btn_add_product": "Add Product",
     "btn_delete_product": "Delete Product",
     "btn_modify_product": "Modify Product",
@@ -24,14 +21,12 @@
     "btn_pause_bot": "Pause Bot",
     "btn_continue_bot": "Continue Bot",
     "btn_restart_bot": "Restart Bot",
-
     "header_priority": "Priority",
     "header_product": "Product",
     "header_platform": "Platform",
     "header_target_price": "Target Price",
     "header_shops": "Shops",
     "header_best_price": "Best Price",
-
     "tooltip_settings": "Settings",
     "tooltip_add_product": "Add a new product",
     "tooltip_update_urls": "Search for the shop URLs that are still missing, for every product",
@@ -39,22 +34,18 @@
     "tooltip_delete_product": "Delete this product",
     "tooltip_header_shops": "Shop status icons (hover one for details):\n✖  no URL yet\n⏳  URL failed — retry scheduled\n⚠ (red)  URL failed — retries exhausted\n❗ (yellow)  no price found (product unavailable)",
     "tooltip_header_priority": "Search priority. Drag rows to reorder — the bot searches\nlower-numbered rows first.",
-
     "shop_marker": {
       "no_url": "No URL assigned yet — waiting for the first search attempt",
       "retry_scheduled": "URL lookup failed — a retry is scheduled",
       "retry_exhausted": "URL lookup failed after all retries — set the URL manually",
       "unavailable": "The store does not have the selected product available"
     },
-
     "confirm_delete_title": "Confirm Delete",
     "confirm_delete_body": "Are you sure you want to delete \"{label}\"?",
-
     "no_products_title": "No products",
     "no_products_body": "No products found in the table.",
     "update_urls_title": "Update URLs",
     "update_urls_body": "Update missing URLs for {count} product(s)?\nOnly shops without a URL will be updated.",
-
     "status_ready": "Ready",
     "status_resolving": "Resolving URLs for {count} product(s)...",
     "status_resolver_running": "URL resolver running...",
@@ -77,13 +68,11 @@
     "status_bot_paused_remaining": "Bot paused — {minutes} min left until the next check.",
     "status_restarting_bot": "Restarting bot (dropping the paused check)..."
   },
-
   "settings": {
     "window_title": "Settings",
     "tab_bot": "Bot",
     "tab_app": "Application",
     "btn_start_bot": "Start Bot",
-
     "label_check_interval": "Check interval:",
     "label_notify_only_best_price": "Notify only best price",
     "label_repeat_notifications": "Repeat notifications",
@@ -92,10 +81,8 @@
     "label_max_parallel_workers": "Scrape in parallel:",
     "label_debug_mode": "Debug mode",
     "label_language": "Language:",
-
     "suffix_minutes": " min",
     "suffix_shops_at_once": " shops at once",
-
     "tooltip_check_interval_minutes": "How often (in minutes) the bot checks product prices.\nDefault: 30 min.",
     "tooltip_notify_only_best_price": "ON  → Only the cheapest shop that beats the target triggers a notification.\nOFF → Every shop below the target price sends its own notification.",
     "tooltip_repeat_notifications": "ON  → Re-send the notification after the cooldown period,\n      even if the price hasn't changed.\nOFF → Notify only when the price drops for the first time.",
@@ -103,9 +90,20 @@
     "tooltip_allow_parallel_scraping": "ON  → Several shops are scraped at the same time, so a full check\n      takes about as long as the slowest shop instead of the sum\n      of them all.\nOFF → One shop after another (original behaviour).\nEach shop is still visited by a single worker, so no site ever\nreceives two simultaneous requests.",
     "tooltip_max_parallel_workers": "How many shops are scraped at the same time.\nOnly active when 'Parallel scraping' is ON.\nEach worker launches its OWN browser: expect roughly 0.5 GB of RAM\nper worker, and with Debug mode ON you will see this many browser\nwindows open at once.\nDefault: 4. Going above that buys very little time for the memory\nit costs (see the benchmark in the README).",
     "tooltip_debug_mode": "ON  → Visible browser windows while scraping + a console with logs.\nOFF → Headless scraping in the background (Release mode).\nTakes effect on the next app launch. Default: ON in development, OFF in the packaged executable.",
-    "tooltip_language": "Language used across the whole interface.\nApplied as soon as you save — no restart needed.\nTo add a language, drop a new .json file into the 'languages'\nfolder; it shows up here automatically."
+    "tooltip_language": "Language used across the whole interface.\nApplied as soon as you save — no restart needed.\nTo add a language, drop a new .json file into the 'languages'\nfolder; it shows up here automatically.",
+    "label_telegram_token": "Telegram bot token",
+    "label_telegram_chat_id": "Telegram chat ID",
+    "placeholder_telegram_token": "123456789:ABCdef...",
+    "placeholder_telegram_chat_id": "e.g. 987654321",
+    "btn_test_telegram": "Send a test message",
+    "telegram_test_message": "Price Bot is connected. Notifications will arrive here.",
+    "telegram_test_missing": "Fill in both the bot token and the chat ID first.",
+    "telegram_test_sending": "Sending...",
+    "telegram_test_ok": "Message sent. Check your Telegram — if it arrived, you are set up.",
+    "telegram_test_failed": "Could not send. Check the token and chat ID, and that you have started a chat with your bot at least once.",
+    "tooltip_telegram_bot_token": "The token BotFather gives you when you create a bot. Open Telegram, talk to @BotFather, send /newbot and follow the steps — the token is the long line it replies with. It is stored on this machine only, and never written to any file that is shared or committed.",
+    "tooltip_telegram_chat_id": "Which chat the alerts are sent to. Talk to @userinfobot in Telegram and it replies with your ID. For a group, add the bot to it and use the group's ID instead. Send a test message below to confirm it works."
   },
-
   "add_product": {
     "window_title": "Add Product",
     "label_name": "Product Name",
@@ -122,7 +120,6 @@
     "missing_name_title": "Missing Product Name",
     "missing_name_body": "Please enter a product name before saving."
   },
-
   "manual_url": {
     "window_title": "Enter Shop URLs",
     "info": "Enter the product URL for each shop (leave blank to auto-resolve).",
@@ -130,7 +127,6 @@
     "confirm_title": "Confirm URL Override",
     "confirm_body": "You are about to save {count} manual URL(s).\nThese will override any automatically resolved URLs in the database.\n\nAre you sure you want to continue?"
   },
-
   "delete_product": {
     "window_title": "Delete Product",
     "heading": "Select products to delete",
@@ -144,7 +140,6 @@
     "confirm_title": "Confirm Delete",
     "confirm_body": "Are you sure you want to delete the selected product/platform(s)?"
   },
-
   "modify_product": {
     "window_title": "Modify Product",
     "heading": "Select products to modify (click checkbox column to select, double-click cells to edit)",
@@ -166,7 +161,6 @@
     "success_title": "Success",
     "success_body": "Products updated successfully."
   },
-
   "shop_manager": {
     "window_title": "Manage Shops — {product}",
     "info": "Check a shop to include it · Uncheck to remove it\nEdit the URL field to set a manual URL (overrides the auto-resolver) — typing a URL includes its shop, clearing it again undoes that",
@@ -185,7 +179,6 @@
     "confirm_intro": "The following shop changes will be applied:\n\n",
     "confirm_outro": "\n\nDo you want to continue?"
   },
-
   "notify": {
     "price_alert": "PRICE ALERT!\n\nProduct: {product}\nShop: {shop}\nCurrent price: {price}€\nTarget price: {target}€\n\nURL:\n{url}"
   }

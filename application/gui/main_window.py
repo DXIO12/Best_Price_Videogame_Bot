@@ -1274,6 +1274,15 @@ class MainWindow(QWidget):
 # scrapes or prints. Must run before the browsers or Qt event loop start.
 init_runtime_mode("gui")
 
+# A packaged build is its own entry point: there is no start_gui script in front
+# of it to have run init_db, so the very first query hits a database file that
+# SQLAlchemy created but never populated ("no such table: products"). Importing
+# the module applies the schema and its migrations, and is idempotent. Skipped
+# from source, where the launcher has already done it and a second pass would
+# only duplicate its log lines.
+if getattr(sys, "frozen", False):
+    import application.database.init_db  # noqa: F401
+
 # Resolve the UI language before any widget is built — every tr() below reads it.
 init_language()
 

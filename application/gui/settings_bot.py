@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QFormLayout,
     QComboBox,
+    QLineEdit,
     QPushButton,
     QLabel,
     QSpinBox,
@@ -17,6 +18,7 @@ from PyQt6.QtCore import pyqtSignal
 
 from application.database.db import SessionLocal
 from application.database.models import Setting
+from application.bot.notifier import send_telegram_message
 from application.config.runtime_config import get_debug_mode, write_config_settings
 from application.language_selector import available_languages, get_language, set_language, tr
 
@@ -48,7 +50,9 @@ class SettingsBotDialog(QDialog):
         # "Settings", not "Settings Bot": the window now also holds
         # application-level options (language, debug mode, parallel scraping).
         self.setWindowTitle(tr("settings.window_title"))
-        self.resize(460, 270)
+        # Tall enough for the Application tab, which is now the longer of the
+        # two: the Telegram rows and their test button sit below debug mode.
+        self.resize(520, 400)
         self._load_data()
         self._setup_ui()
 
@@ -245,7 +249,64 @@ class SettingsBotDialog(QDialog):
             self._debug_chk,
         )
 
+        # Telegram credentials. These live here rather than only in a .env so a
+        # packaged build can be configured from inside the app — see the
+        # comment on Setting.telegram_bot_token.
+        self._token_edit = QLineEdit(s.telegram_bot_token if s and s.telegram_bot_token else "")
+        # Masked: a bot token is a bearer credential, and this dialog gets
+        # opened while screen-sharing. The Test button below is how you confirm
+        # it was pasted correctly, so nothing is lost by not showing it.
+        self._token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._token_edit.setPlaceholderText(tr("settings.placeholder_telegram_token"))
+        form.addRow(
+            self._label_widget("telegram_bot_token", tr("settings.label_telegram_token")),
+            self._token_edit,
+        )
+
+        self._chat_edit = QLineEdit(s.telegram_chat_id if s and s.telegram_chat_id else "")
+        self._chat_edit.setPlaceholderText(tr("settings.placeholder_telegram_chat_id"))
+        form.addRow(
+            self._label_widget("telegram_chat_id", tr("settings.label_telegram_chat_id")),
+            self._chat_edit,
+        )
+
+        self._test_btn = QPushButton(tr("settings.btn_test_telegram"))
+        self._test_btn.clicked.connect(self._on_test_telegram)
+        form.addRow("", self._test_btn)
+
         return page
+
+    def _on_test_telegram(self):
+        """Send a real message with whatever is typed in the two fields.
+
+        Deliberately uses the field contents rather than what is stored: the
+        point is to check a token *before* saving it, and to give the person
+        setting this up the one thing a masked field cannot — proof that it
+        works."""
+        token = self._token_edit.text().strip()
+        chat_id = self._chat_edit.text().strip()
+
+        if not token or not chat_id:
+            QMessageBox.warning(self, tr("settings.btn_test_telegram"),
+                                tr("settings.telegram_test_missing"))
+            return
+
+        self._test_btn.setEnabled(False)
+        self._test_btn.setText(tr("settings.telegram_test_sending"))
+        # Repaint before the blocking request, or the button never visibly changes.
+        self._test_btn.repaint()
+        try:
+            ok = send_telegram_message(token, chat_id, tr("settings.telegram_test_message"))
+        finally:
+            self._test_btn.setEnabled(True)
+            self._test_btn.setText(tr("settings.btn_test_telegram"))
+
+        if ok:
+            QMessageBox.information(self, tr("settings.btn_test_telegram"),
+                                    tr("settings.telegram_test_ok"))
+        else:
+            QMessageBox.critical(self, tr("settings.btn_test_telegram"),
+                                 tr("settings.telegram_test_failed"))
 
     def _on_save(self):
         interval = self._interval_spin.value()
@@ -256,6 +317,8 @@ class SettingsBotDialog(QDialog):
         workers = self._workers_spin.value()
         debug = self._debug_chk.isChecked()
         language = self._language_combo.currentData() or get_language()
+        telegram_token = self._token_edit.text().strip()
+        telegram_chat = self._chat_edit.text().strip()
 
         db = SessionLocal()
         setting = db.query(Setting).first()
@@ -271,6 +334,8 @@ class SettingsBotDialog(QDialog):
         setting.max_parallel_workers = workers
         setting.debug_mode = debug
         setting.language = language
+        setting.telegram_bot_token = telegram_token or None
+        setting.telegram_chat_id = telegram_chat or None
 
         db.commit()
         db.close()
@@ -302,6 +367,9 @@ class SettingsBotDialog(QDialog):
             log.info(f"Parallel Workers:        {workers}")
         log.info(f"Debug Mode:              {debug}")
         log.info(f"Language:                {language}")
+        # The token is never logged, only whether one is present.
+        log.info(f"Telegram:                "
+                 f"{'configured' if telegram_token and telegram_chat else 'not configured'}")
         log.rule()
 
         self.settings_saved.emit()

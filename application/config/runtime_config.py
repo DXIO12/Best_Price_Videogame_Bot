@@ -93,6 +93,32 @@ def log_file_path(process: str | None = None) -> Path:
     return log_dir() / f"price_bot_{process_name(process)}.log"
 
 
+def browsers_dir() -> Path:
+    """Where a packaged build keeps its Playwright browsers: ``<base>/browsers``."""
+    return base_dir() / "browsers"
+
+
+def use_bundled_browsers() -> bool:
+    """Point Playwright at the browsers shipped beside the executable.
+
+    A distributed copy has no Python, so the ``playwright install chromium``
+    that Playwright's own error message tells the user to run is not a command
+    they can execute. The build therefore downloads Chromium straight into
+    ``<dist>/browsers``, and this repoints Playwright at it.
+
+    ``PLAYWRIGHT_BROWSERS_PATH`` set by hand always wins, so a developer can
+    still override it. Returns whether the redirect was applied."""
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        return False
+
+    path = browsers_dir()
+    if not path.is_dir():
+        return False
+
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(path)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # config.json mirror (read-merge-write, preserves unrelated keys)
 # ---------------------------------------------------------------------------
@@ -222,6 +248,11 @@ def init_runtime_mode(process: str | None = None) -> bool:
     name = process_name(process)
     setup_logging(name, debug, log_file_path(name))
     install_excepthook()
+
+    # Before any scraper runs. Only ever finds anything in a packaged build,
+    # where the browsers ship next to the executable.
+    if use_bundled_browsers():
+        _log.info(f"Using bundled browsers: {browsers_dir()}")
 
     mode = "DEBUG (visible browsers, console + logs)" if debug \
         else "RELEASE (headless, background)"

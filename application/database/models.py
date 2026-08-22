@@ -83,6 +83,16 @@ class Setting(Base):
     # in language_selector.translator.resolve_language().
     language = Column(String)
 
+    # Telegram credentials. Stored here rather than only in .env so a packaged
+    # build is configurable from its own Settings dialog — the people running a
+    # distributed copy have no source tree to drop a .env into, and on Windows
+    # a file named ".env" is genuinely awkward to create.
+    #
+    # Deliberately NOT mirrored to config.json like every other setting: that
+    # file is tracked in git, and a bot token in it would be committed.
+    telegram_bot_token = Column(String)
+    telegram_chat_id = Column(String)
+
 
 class Product(Base):
 

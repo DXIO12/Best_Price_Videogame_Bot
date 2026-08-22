@@ -2,7 +2,6 @@
   "_meta": {
     "name": "Español"
   },
-
   "common": {
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -11,11 +10,9 @@
     "none": "Ninguna",
     "n_selected": "{count} seleccionadas"
   },
-
   "main": {
     "window_title": "Price Bot",
     "heading": "Buscador de Mejores Precios de Videojuegos",
-
     "btn_add_product": "Añadir Producto",
     "btn_delete_product": "Eliminar Producto",
     "btn_modify_product": "Modificar Producto",
@@ -24,14 +21,12 @@
     "btn_pause_bot": "Pausar Bot",
     "btn_continue_bot": "Continuar Bot",
     "btn_restart_bot": "Reiniciar Bot",
-
     "header_priority": "Prioridad",
     "header_product": "Producto",
     "header_platform": "Plataforma",
     "header_target_price": "Precio Deseado",
     "header_shops": "Tiendas",
     "header_best_price": "Mejor Precio",
-
     "tooltip_settings": "Ajustes",
     "tooltip_add_product": "Añadir un producto nuevo",
     "tooltip_update_urls": "Buscar las URLs de tienda que faltan, de todos los productos",
@@ -39,22 +34,18 @@
     "tooltip_delete_product": "Eliminar este producto",
     "tooltip_header_shops": "Iconos de estado de tienda (pasa el cursor para ver detalles):\n✖  todavía sin URL\n⏳  la URL falló — reintento programado\n⚠ (rojo)  la URL falló — reintentos agotados\n❗ (amarillo)  sin precio (producto no disponible)",
     "tooltip_header_priority": "Prioridad de búsqueda. Arrastra las filas para reordenarlas — el bot\nbusca primero las filas con número más bajo.",
-
     "shop_marker": {
       "no_url": "Todavía sin URL asignada — esperando al primer intento de búsqueda",
       "retry_scheduled": "La búsqueda de la URL falló — hay un reintento programado",
       "retry_exhausted": "La búsqueda de la URL falló tras todos los reintentos — asigna la URL a mano",
       "unavailable": "La tienda no tiene disponible el producto seleccionado"
     },
-
     "confirm_delete_title": "Confirmar Eliminación",
     "confirm_delete_body": "¿Seguro que quieres eliminar \"{label}\"?",
-
     "no_products_title": "Sin productos",
     "no_products_body": "No se han encontrado productos en la tabla.",
     "update_urls_title": "Actualizar URLs",
     "update_urls_body": "¿Actualizar las URLs que faltan de {count} producto(s)?\nSolo se actualizarán las tiendas que no tengan URL.",
-
     "status_ready": "Listo",
     "status_resolving": "Resolviendo URLs de {count} producto(s)...",
     "status_resolver_running": "Buscador de URLs en marcha...",
@@ -77,13 +68,11 @@
     "status_bot_paused_remaining": "Bot en pausa — quedan {minutes} min para la próxima comprobación.",
     "status_restarting_bot": "Reiniciando el bot (se descarta la comprobación pausada)..."
   },
-
   "settings": {
     "window_title": "Ajustes",
     "tab_bot": "Bot",
     "tab_app": "Aplicación",
     "btn_start_bot": "Iniciar Bot",
-
     "label_check_interval": "Intervalo de comprobación:",
     "label_notify_only_best_price": "Notificar solo el mejor precio",
     "label_repeat_notifications": "Repetir notificaciones",
@@ -92,10 +81,8 @@
     "label_max_parallel_workers": "Scraping simultáneo:",
     "label_debug_mode": "Modo depuración",
     "label_language": "Idioma:",
-
     "suffix_minutes": " min",
     "suffix_shops_at_once": " tiendas a la vez",
-
     "tooltip_check_interval_minutes": "Cada cuánto (en minutos) comprueba el bot los precios de los productos.\nPor defecto: 30 min.",
     "tooltip_notify_only_best_price": "ON  → Solo la tienda más barata que baje del objetivo lanza una notificación.\nOFF → Cada tienda por debajo del precio objetivo envía su propia notificación.",
     "tooltip_repeat_notifications": "ON  → Reenvía la notificación tras el periodo de espera,\n      aunque el precio no haya cambiado.\nOFF → Notifica solo la primera vez que baja el precio.",
@@ -103,9 +90,20 @@
     "tooltip_allow_parallel_scraping": "ON  → Se hace scraping de varias tiendas a la vez, así una comprobación\n      completa tarda más o menos lo que la tienda más lenta en vez de\n      la suma de todas.\nOFF → Una tienda detrás de otra (comportamiento original).\nCada tienda la sigue visitando un único worker, así que ningún sitio\nrecibe nunca dos peticiones simultáneas.",
     "tooltip_max_parallel_workers": "Cuántas tiendas se scrapean a la vez.\nSolo activo cuando 'Scraping en paralelo' está en ON.\nCada worker abre su PROPIO navegador: cuenta con unos 0,5 GB de RAM\npor worker, y con el Modo depuración en ON verás abiertas a la vez\nesas mismas ventanas de navegador.\nPor defecto: 4. Subir de ahí gana muy poco tiempo para la memoria\nque cuesta (mira el benchmark del README).",
     "tooltip_debug_mode": "ON  → Ventanas de navegador visibles durante el scraping + consola con logs.\nOFF → Scraping headless en segundo plano (modo Release).\nSe aplica en el siguiente arranque de la aplicación. Por defecto: ON en desarrollo, OFF en el ejecutable empaquetado.",
-    "tooltip_language": "Idioma usado en toda la interfaz.\nSe aplica nada más guardar — no hace falta reiniciar.\nPara añadir un idioma, deja un archivo .json nuevo en la carpeta\n'languages'; aparecerá aquí automáticamente."
+    "tooltip_language": "Idioma usado en toda la interfaz.\nSe aplica nada más guardar — no hace falta reiniciar.\nPara añadir un idioma, deja un archivo .json nuevo en la carpeta\n'languages'; aparecerá aquí automáticamente.",
+    "label_telegram_token": "Token del bot de Telegram",
+    "label_telegram_chat_id": "ID de chat de Telegram",
+    "placeholder_telegram_token": "123456789:ABCdef...",
+    "placeholder_telegram_chat_id": "p. ej. 987654321",
+    "btn_test_telegram": "Enviar mensaje de prueba",
+    "telegram_test_message": "Price Bot está conectado. Los avisos llegarán aquí.",
+    "telegram_test_missing": "Rellena antes el token y el ID de chat.",
+    "telegram_test_sending": "Enviando...",
+    "telegram_test_ok": "Mensaje enviado. Mira tu Telegram: si ha llegado, ya está configurado.",
+    "telegram_test_failed": "No se pudo enviar. Revisa el token y el ID de chat, y que hayas abierto conversación con tu bot al menos una vez.",
+    "tooltip_telegram_bot_token": "El token que te da BotFather al crear un bot. Abre Telegram, habla con @BotFather, envía /newbot y sigue los pasos: el token es la línea larga que te responde. Se guarda sólo en este equipo, y nunca se escribe en ningún fichero que se comparta o se suba al repositorio.",
+    "tooltip_telegram_chat_id": "A qué chat se envían los avisos. Habla con @userinfobot en Telegram y te responde con tu ID. Para un grupo, añade el bot al grupo y usa el ID del grupo. Envía un mensaje de prueba abajo para confirmarlo."
   },
-
   "add_product": {
     "window_title": "Añadir Producto",
     "label_name": "Nombre del Producto",
@@ -122,7 +120,6 @@
     "missing_name_title": "Falta el Nombre del Producto",
     "missing_name_body": "Introduce un nombre de producto antes de guardar."
   },
-
   "manual_url": {
     "window_title": "Introducir URLs de Tienda",
     "info": "Introduce la URL del producto para cada tienda (déjala en blanco para resolverla automáticamente).",
@@ -130,7 +127,6 @@
     "confirm_title": "Confirmar Sobrescritura de URLs",
     "confirm_body": "Estás a punto de guardar {count} URL(s) manuales.\nSobrescribirán cualquier URL resuelta automáticamente en la base de datos.\n\n¿Seguro que quieres continuar?"
   },
-
   "delete_product": {
     "window_title": "Eliminar Producto",
     "heading": "Selecciona los productos a eliminar",
@@ -144,7 +140,6 @@
     "confirm_title": "Confirmar Eliminación",
     "confirm_body": "¿Seguro que quieres eliminar el/los producto(s)/plataforma(s) seleccionado(s)?"
   },
-
   "modify_product": {
     "window_title": "Modificar Producto",
     "heading": "Selecciona los productos a modificar (marca la casilla para seleccionar, doble clic en las celdas para editar)",
@@ -166,7 +161,6 @@
     "success_title": "Correcto",
     "success_body": "Productos actualizados correctamente."
   },
-
   "shop_manager": {
     "window_title": "Gestionar Tiendas — {product}",
     "info": "Marca una tienda para incluirla · Desmárcala para quitarla\nEdita el campo URL para poner una URL manual (tiene prioridad sobre el buscador automático) — escribir una URL incluye su tienda, y borrarla lo deshace",
@@ -185,7 +179,6 @@
     "confirm_intro": "Se aplicarán los siguientes cambios de tiendas:\n\n",
     "confirm_outro": "\n\n¿Quieres continuar?"
   },
-
   "notify": {
     "price_alert": "¡ALERTA DE PRECIO!\n\nProducto: {product}\nTienda: {shop}\nPrecio actual: {price}€\nPrecio objetivo: {target}€\n\nURL:\n{url}"
   }

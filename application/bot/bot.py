@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from application.bot.notifier import send_telegram_message
+from application.bot.notifier import get_telegram_credentials, send_telegram_message
 
 from application.shops.amazon import get_amazon_price
 from application.shops.game import get_game_price
@@ -168,11 +168,10 @@ def send_notification(product_name: str, shop: str, current_price: float,
         target=target_price,
         url=url,
     )
-    send_telegram_message(
-        os.getenv("TELEGRAM_BOT_TOKEN"),
-        os.getenv("TELEGRAM_CHAT_ID"),
-        message
-    )
+    # Credentials come from the Settings dialog first, then the environment —
+    # a packaged build has no .env to read. See notifier.get_telegram_credentials.
+    token, chat_id = get_telegram_credentials()
+    send_telegram_message(token, chat_id, message)
 
 
 # =========================================================
