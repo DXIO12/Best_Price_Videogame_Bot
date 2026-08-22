@@ -1,3 +1,4 @@
+from application.config.logger import get_logger
 from application.services.product_service import (
     modify_product,
     apply_shop_changes,
@@ -26,6 +27,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QHeaderView,
 )
+
+log = get_logger("gui.modify")
 
 
 def _shop_button_text(records) -> str:
@@ -310,7 +313,7 @@ class ModifyProductDialog(QDialog):
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
-            print(f"===================================")
+            log.rule()
             for product_id, changes in selected_changes.items():
                 modify_product(
                     product_id,
@@ -335,9 +338,9 @@ class ModifyProductDialog(QDialog):
                             f"price: {original['original_price']}€ → {changes['price']}€"
                         )
                     if diffs:
-                        print(f"[Modify] '{changes['name']}' — {', '.join(diffs)}")
+                        log.info(f"'{changes['name']}' — {', '.join(diffs)}")
                     else:
-                        print(f"[Modify] '{changes['name']}' — no changes detected")
+                        log.info(f"'{changes['name']}' — no changes detected")
 
             self.load_products()
             QMessageBox.information(

@@ -1,5 +1,10 @@
+from application.config.logger import get_logger
+from application.config.runtime_config import init_runtime_mode
 from application.database.db import SessionLocal
 from application.database.models import Platform
+
+init_runtime_mode()
+log = get_logger("database")
 
 platforms = [
     "PS5",
@@ -27,4 +32,4 @@ db.commit()
 
 db.close()
 
-print("Platforms seeded.")
+log.info("Platforms seeded.")

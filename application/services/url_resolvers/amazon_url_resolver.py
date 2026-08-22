@@ -1,7 +1,10 @@
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
+
+log = get_logger("resolver.amazon")
 
 
 def clean_amazon_url(href: str) -> str | None:
@@ -39,7 +42,7 @@ def resolve_amazon_product_url(search_url, platform: str | None = None):
                 timeout=15000
             )
         except PlaywrightTimeout:
-            print("Timed out waiting for Amazon results.")
+            log.warning("Timed out waiting for Amazon results.")
             browser.close()
             return None
 

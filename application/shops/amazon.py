@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 from application.shops.price_utils import extract_price
+
+log = get_logger("shops.amazon")
 
 
 # Only look for a price inside the main-product price region. Searching the whole
@@ -112,5 +115,5 @@ def get_amazon_price(url):
             return None
 
     except Exception as e:
-        print(f"Amazon scraper error: {e}")
+        log.error(f"Amazon scraper error: {e}")
         return None

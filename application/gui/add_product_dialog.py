@@ -1,3 +1,4 @@
+from application.config.logger import get_logger
 from application.services.product_service import create_product, get_platform_priorities
 from application.language_selector import tr
 from PyQt6.QtCore import pyqtSignal, QTimer, QPoint
@@ -19,6 +20,8 @@ from PyQt6.QtWidgets import (
     QMessageBox
 )
 import os
+
+log = get_logger("gui.add")
 
 
 def get_available_shops_urlsearcher():
@@ -364,7 +367,7 @@ class AddProductDialog(QDialog):
             return
 
         if not selected_platforms:
-            print("Please select at least one platform.")
+            log.warning("Please select at least one platform.")
             return
 
         if not selected_shops and not self.manual_shop_urls:
@@ -396,11 +399,11 @@ class AddProductDialog(QDialog):
         for shop_key in self.manual_shop_urls:
             if shop_key not in selected_lower:
                 shops_info.append(f"{shop_key.capitalize()} (manual URL)")
-        print(f"===================================")
-        print(f"[Add] Product saved: '{name}'")
-        print(f"[Add] Platforms   : {', '.join(selected_platforms)}")
-        print(f"[Add] Target price: {target_price} €")
-        print(f"[Add] Shops       : {', '.join(shops_info)}")
-        print(f"===================================")
+        log.rule()
+        log.info(f"Product saved: '{name}'")
+        log.info(f"Platforms   : {', '.join(selected_platforms)}")
+        log.info(f"Target price: {target_price} €")
+        log.info(f"Shops       : {', '.join(shops_info)}")
+        log.rule()
         self.product_added.emit(product_id)
         self.close()

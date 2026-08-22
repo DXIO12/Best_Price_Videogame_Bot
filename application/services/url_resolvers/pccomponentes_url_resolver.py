@@ -4,6 +4,7 @@ from urllib.parse import urlparse, parse_qs, unquote_plus
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from application.services.url_resolvers.resolution import (
     is_used,
@@ -15,6 +16,8 @@ from application.services.url_resolvers.resolution import (
     title_match_ratio,
     MIN_TITLE_MATCH_RATIO,
 )
+
+log = get_logger("resolver.pccomponentes")
 
 BASE_URL = "https://www.pccomponentes.com"
 
@@ -64,7 +67,7 @@ def resolve_pccomponentes_product_url(search_url: str, platform: str | None = No
         except PlaywrightTimeout:
             # A search with no hits and a search page that never rendered look
             # the same from here, so this stays retryable (see resolution.py).
-            print("[PCComponentes] No product cards rendered.")
+            log.warning("No product cards rendered.")
             browser.close()
             return search_failed()
 
@@ -104,11 +107,11 @@ def resolve_pccomponentes_product_url(search_url: str, platform: str | None = No
 
         if not href:
             if used_matches:
-                print(f"[PCComponentes] Only second-hand copies: {used_matches[0]}")
+                log.debug(f"Only second-hand copies: {used_matches[0]}")
                 return only_used()
             # Cards rendered and none of them is the product: the shop has
             # answered, and the answer is that it does not sell it.
-            print(f"[PCComponentes] '{query}' not sold for {platform}.")
+            log.debug(f"'{query}' not sold for {platform}.")
             return not_found()
 
         return resolved(href if href.startswith("http") else f"{BASE_URL}{href}")

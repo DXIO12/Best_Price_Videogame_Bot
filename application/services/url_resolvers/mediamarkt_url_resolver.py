@@ -2,6 +2,7 @@
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from application.services.url_resolvers.resolution import (
     is_used,
@@ -14,6 +15,8 @@ from application.services.url_resolvers.resolution import (
     MIN_TITLE_MATCH_RATIO,
 )
 from urllib.parse import urlparse, parse_qs, unquote_plus
+
+log = get_logger("resolver.mediamarkt")
 
 BASE_URL = "https://www.mediamarkt.es"
 
@@ -73,7 +76,7 @@ def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None)
         try:
             page.wait_for_selector(RESULTS_SELECTOR, state="attached", timeout=20000)
         except PlaywrightTimeout:
-            print("[MediaMarkt] Search results grid did not render.")
+            log.warning("Search results grid did not render.")
             browser.close()
             return search_failed()
 
@@ -82,7 +85,7 @@ def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None)
             page.wait_for_selector(CARD_SELECTOR, state="attached", timeout=10000)
         except PlaywrightTimeout:
             # Grid rendered with no cards in it — that is the shop's answer.
-            print(f"[MediaMarkt] No results for '{query}'.")
+            log.debug(f"No results for '{query}'.")
             browser.close()
             return not_found()
 
@@ -125,9 +128,9 @@ def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None)
 
         if not href:
             if used_matches:
-                print(f"[MediaMarkt] Only second-hand copies: {used_matches[0]}")
+                log.debug(f"Only second-hand copies: {used_matches[0]}")
                 return only_used()
-            print(f"[MediaMarkt] '{query}' not sold for {platform}.")
+            log.debug(f"'{query}' not sold for {platform}.")
             return not_found()
 
         return resolved(href if href.startswith("http") else f"{BASE_URL}{href}")

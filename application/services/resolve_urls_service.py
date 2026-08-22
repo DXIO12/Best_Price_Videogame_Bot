@@ -28,6 +28,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
+from application.config.logger import get_logger
+
 from application.database.db import SessionLocal
 from application.database.models import Product, ProductShop
 
@@ -47,6 +49,9 @@ from application.services.url_resolvers.pccomponentes_url_resolver import resolv
 from application.services.url_resolvers.todoconsolas_url_resolver import resolve_todoconsolas_product_url
 from application.services.url_resolvers.wakkap_url_resolver import resolve_wakkap_product_url
 from application.services.url_resolvers.xtralife_url_resolver import resolve_xtralife_product_url
+
+log = get_logger("resolver")
+retry_log = get_logger("retry")
 
 
 # Map shop name (lower) → resolver function
@@ -104,7 +109,7 @@ def _mark_terminal(record: ProductShop, status: ResolutionStatus) -> None:
     """Stop the retry timer re-asking a question the shop has already answered."""
     record.retry_count = MAX_RETRIES + 1  # same sentinel the ladder ends on
     record.next_retry_at = None
-    print(f"[Resolver] {record.shop}: {status.value} — no retry scheduled")
+    log.warning(f"{record.shop}: {status.value} — no retry scheduled")
 
 
 def _schedule_retry(record: ProductShop) -> None:
@@ -114,11 +119,11 @@ def _schedule_retry(record: ProductShop) -> None:
         delay = RETRY_INTERVALS_MINUTES[current]
         record.retry_count = current + 1
         record.next_retry_at = datetime.utcnow() + timedelta(minutes=delay)
-        print(f"[Resolver] {record.shop}: retry {current + 1}/{MAX_RETRIES} in {delay} min")
+        log.debug(f"{record.shop}: retry {current + 1}/{MAX_RETRIES} in {delay} min")
     else:
         record.retry_count = MAX_RETRIES + 1  # sentinel: all retries exhausted
         record.next_retry_at = None
-        print(f"[Resolver] {record.shop}: all retries exhausted")
+        log.warning(f"{record.shop}: all retries exhausted")
 
 
 # ─────────────────────────────────────────────
@@ -145,7 +150,7 @@ def resolve_urls_for_product(
 
     if not product:
         db.close()
-        print(f"[Resolver] Product {product_id} not found.")
+        log.warning(f"Product {product_id} not found.")
         return {}
 
     platform_names = [p.name for p in product.platforms] if product.platforms else [None]
@@ -162,39 +167,39 @@ def resolve_urls_for_product(
 
         # Skip if a URL is already set (manual URL — never overwrite)
         if record.url and record.url.strip():
-            print(f"[Resolver] {record.shop}: already has URL, skipping.")
+            log.debug(f"{record.shop}: already has URL, skipping.")
             continue
 
         resolver = RESOLVERS.get(shop_key)
         if resolver is None:
-            print(f"[Resolver] {record.shop}: no resolver available, skipping.")
+            log.warning(f"{record.shop}: no resolver available, skipping.")
             results[record.shop] = search_failed()
             continue
 
         search_url = get_search_url(shop_key, product.name, platform)
         if not search_url:
-            print(f"[Resolver] {record.shop}: could not build search URL, skipping.")
+            log.warning(f"{record.shop}: could not build search URL, skipping.")
             results[record.shop] = search_failed()
             continue
 
         with _claim(product_id, shop_key) as claimed:
             if not claimed:
-                print(f"[Resolver] {record.shop}: already being resolved, skipping.")
+                log.debug(f"{record.shop}: already being resolved, skipping.")
                 continue
 
             # Another worker may have finished this row between the query above
             # and the claim, so re-read it before spending a browser run.
             db.refresh(record)
             if record.url and record.url.strip():
-                print(f"[Resolver] {record.shop}: resolved by another worker, skipping.")
+                log.debug(f"{record.shop}: resolved by another worker, skipping.")
                 continue
 
-            print(f"[Resolver] {record.shop}: resolving '{product.name}' ({platform})...")
+            log.debug(f"{record.shop}: resolving '{product.name}' ({platform})...")
             try:
                 outcome = normalize(resolver(search_url, platform))
             except Exception as e:
                 # A crash tells us nothing about the product, so it retries.
-                print(f"[Resolver] {record.shop}: resolver error — {e}")
+                log.error(f"{record.shop}: resolver error — {e}")
                 outcome = search_failed()
 
             resolved_url = outcome.url
@@ -203,11 +208,11 @@ def resolve_urls_for_product(
                 record.url = resolved_url
                 record.retry_count = 0
                 record.next_retry_at = None
-                print(f"[Resolver] {record.shop}: ✓ {resolved_url}")
+                log.info(f"{record.shop}: ✓ {resolved_url}")
             elif outcome.status in TERMINAL_STATUSES:
                 _mark_terminal(record, outcome.status)
             else:
-                print(f"[Resolver] {record.shop}: ✗ could not resolve URL")
+                log.warning(f"{record.shop}: ✗ could not resolve URL")
                 _schedule_retry(record)
 
             # Publish the result before releasing the claim, so a worker waiting
@@ -315,21 +320,21 @@ def _retry_single_shop(shop_record_id: int, on_progress=None):
     # resolver worker is already busy with.
     with _claim(product.id, shop_key) as claimed:
         if not claimed:
-            print(f"[Retry] {record.shop}: already being resolved, skipping.")
+            retry_log.debug(f"{record.shop}: already being resolved, skipping.")
             db.close()
             return None
 
         db.refresh(record)
         if record.url and record.url.strip():
-            print(f"[Retry] {record.shop}: resolved by another worker, skipping.")
+            retry_log.debug(f"{record.shop}: resolved by another worker, skipping.")
             db.close()
             return None
 
-        print(f"[Retry] {record.shop} for '{product.name}' (attempt {record.retry_count + 1})...")
+        retry_log.debug(f"{record.shop} for '{product.name}' (attempt {record.retry_count + 1})...")
         try:
             outcome = normalize(resolver(search_url, platform))
         except Exception as e:
-            print(f"[Retry] {record.shop}: error — {e}")
+            retry_log.error(f"{record.shop}: error — {e}")
             outcome = search_failed()
 
         resolved_url = outcome.url
@@ -338,14 +343,14 @@ def _retry_single_shop(shop_record_id: int, on_progress=None):
             record.url = resolved_url
             record.retry_count = 0
             record.next_retry_at = None
-            print(f"[Retry] {record.shop}: ✓ {resolved_url}")
+            retry_log.info(f"{record.shop}: ✓ {resolved_url}")
         elif outcome.status in TERMINAL_STATUSES:
             # A retry can still land on a definitive answer — e.g. a stale
             # selector that used to fail now reads the grid and finds the shop
             # genuinely does not stock the product. Stop the ladder there.
             _mark_terminal(record, outcome.status)
         else:
-            print(f"[Retry] {record.shop}: ✗ still not resolved")
+            retry_log.warning(f"{record.shop}: ✗ still not resolved")
             _schedule_retry(record)
 
         db.commit()

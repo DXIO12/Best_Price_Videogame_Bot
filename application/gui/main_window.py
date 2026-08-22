@@ -1,3 +1,4 @@
+from application.config.logger import get_logger
 import sys
 import threading
 from application.config.runtime_config import init_runtime_mode
@@ -42,6 +43,8 @@ from application.gui.bot_worker import BotWorker
 from application.services.resolver_worker import ResolverWorker, RetryWorker
 from application.services.resolve_urls_service import MAX_RETRIES
 from application.services.url_resolvers.resolution import ResolutionStatus
+
+log = get_logger("gui")
 
 
 class PriorityTableWidget(QTableWidget):
@@ -686,8 +689,8 @@ class MainWindow(QWidget):
         else:
             delete_products([product_id])
 
-        print(f"===================================")
-        print(f"[Delete] '{label}' removed via quick delete.")
+        log.rule()
+        log.info(f"'{label}' removed via quick delete.")
 
         self.load_products()
 
@@ -1269,7 +1272,7 @@ class MainWindow(QWidget):
 
 # Establish execution mode (console/logs + headless resolution) before anything
 # scrapes or prints. Must run before the browsers or Qt event loop start.
-init_runtime_mode()
+init_runtime_mode("gui")
 
 # Resolve the UI language before any widget is built — every tr() below reads it.
 init_language()

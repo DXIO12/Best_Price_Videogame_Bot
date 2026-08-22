@@ -1,5 +1,8 @@
+from application.config.logger import get_logger
 from application.shops.playwright_utils import chromium_page
 from application.shops.price_utils import extract_price
+
+log = get_logger("shops.pccomponentes")
 
 
 def get_pccomponentes_price(url):
@@ -40,5 +43,5 @@ def get_pccomponentes_price(url):
             return extract_price(full_price)
 
     except Exception as e:
-        print(f"PcComponentes scraper error: {e}")
+        log.error(f"PcComponentes scraper error: {e}")
         return None

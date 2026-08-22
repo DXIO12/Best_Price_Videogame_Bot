@@ -5,11 +5,14 @@ from urllib.parse import urlparse, parse_qs, unquote_plus
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from application.services.url_resolvers.resolution import (
     title_match_ratio,
     MIN_TITLE_MATCH_RATIO,
 )
+
+log = get_logger("resolver.todoconsolas")
 
 BASE_URL = "https://www.todoconsolas.com"
 
@@ -81,12 +84,12 @@ def _apply_filter(page, facet_label: str, option_label: str) -> bool:
     """
     facet = page.locator(FACET_SELECTOR).filter(has_text=facet_label).first
     if not facet.count():
-        print(f"[TodoConsolas] '{facet_label}' filter not offered for this search.")
+        log.debug(f"'{facet_label}' filter not offered for this search.")
         return False
 
     option = facet.locator(FILTER_SELECTOR).filter(has_text=option_label).first
     if not option.count():
-        print(f"[TodoConsolas] '{facet_label} → {option_label}' not available.")
+        log.debug(f"'{facet_label} → {option_label}' not available.")
         return False
 
     try:
@@ -94,7 +97,7 @@ def _apply_filter(page, facet_label: str, option_label: str) -> bool:
         page.wait_for_timeout(3000)
         return True
     except Exception as e:
-        print(f"[TodoConsolas] Could not tick '{option_label}': {e}")
+        log.warning(f"Could not tick '{option_label}': {e}")
         return False
 
 
@@ -194,38 +197,38 @@ def resolve_todoconsolas_product_url(search_url: str, platform: str | None = Non
             search_box.press("Enter")
             page.wait_for_timeout(3000)
         except Exception as e:
-            print(f"[TodoConsolas] Search box not usable ({e}), opening the search URL.")
+            log.warning(f"Search box not usable ({e}), opening the search URL.")
             try:
                 page.goto(search_url, wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
             except Exception as goto_error:
-                print(f"[TodoConsolas] Could not open the search page: {goto_error}")
+                log.error(f"Could not open the search page: {goto_error}")
                 browser.close()
                 return None
 
         try:
             page.wait_for_selector(RESULT_SELECTOR, timeout=20000)
         except PlaywrightTimeout:
-            print(f"[TodoConsolas] No results for '{query}'.")
+            log.debug(f"No results for '{query}'.")
             browser.close()
             return None
 
         # Restrict to the Spanish edition, then to new copies. Second-hand is
         # only accepted when the shop offers no new one.
         if not _apply_filter(page, REGION_FACET, REGION_FILTER):
-            print(f"[TodoConsolas] No PAL/ES stock for '{query}'.")
+            log.debug(f"No PAL/ES stock for '{query}'.")
             browser.close()
             return None
 
         if not _apply_filter(page, CONDITION_FACET, NEW_FILTER):
-            print("[TodoConsolas] No new copy, falling back to second-hand.")
+            log.debug("No new copy, falling back to second-hand.")
 
         cards = _read_cards(page)
         browser.close()
 
     href = _pick_best_card(cards, query, platform)
     if not href:
-        print(f"[TodoConsolas] No match for '{query}' on {platform}.")
+        log.debug(f"No match for '{query}' on {platform}.")
         return None
 
     return href if href.startswith("http") else f"{BASE_URL}{href}"

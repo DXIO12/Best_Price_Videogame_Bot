@@ -1,6 +1,9 @@
+from application.config.logger import get_logger
 from application.database.db import SessionLocal
 from sqlalchemy.orm import joinedload
 from application.database.models import (Product, ProductShop, Platform, product_platforms)
+
+log = get_logger("shops_edit")
 
 # Maps GUI display labels → DB-stored names (and reverse).
 # Update this dict whenever a platform is renamed in the DB.
@@ -279,7 +282,7 @@ def apply_shop_changes(product_id, to_add, to_remove, to_update):
         record = db.query(ProductShop).filter(ProductShop.id == record_id).first()
         if record:
             db.delete(record)
-            print(f"[Shops] Removed '{shop}' from product {product_id}")
+            log.info(f"Removed '{shop}' from product {product_id}")
 
     for record_id, new_url in to_update:
         record = db.query(ProductShop).filter(ProductShop.id == record_id).first()
@@ -289,7 +292,7 @@ def apply_shop_changes(product_id, to_add, to_remove, to_update):
             record.retry_count = 0
             record.next_retry_at = None
             status = "manual URL set" if new_url else "URL cleared (will auto-resolve)"
-            print(f"[Shops] '{record.shop}' on product {product_id}: {status}")
+            log.info(f"'{record.shop}' on product {product_id}: {status}")
 
     for shop_info in to_add:
         db.add(ProductShop(
@@ -298,7 +301,7 @@ def apply_shop_changes(product_id, to_add, to_remove, to_update):
             url=shop_info["url"],
             retry_count=0,
         ))
-        print(f"[Shops] Added '{shop_info['shop']}' to product {product_id}"
+        log.info(f"Added '{shop_info['shop']}' to product {product_id}"
               + (" with manual URL" if shop_info["url"] else " (will auto-resolve)"))
 
     db.commit()
