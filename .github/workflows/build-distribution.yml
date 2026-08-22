@@ -1,0 +1,79 @@
+# Builds the distributable app for Linux and Windows.
+#
+# The reason this exists: PyInstaller does not cross-compile. A Windows .exe can
+# only be produced on Windows, and the project is developed on Linux — so the
+# Windows half of any release has to be built here.
+#
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.0.
+# Each run leaves two downloadable zips under the run's Artifacts section.
+
+name: Build distribution
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false        # a Windows failure should not hide a good Linux build
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            script: ./packaging/build_exe.sh
+          - os: windows-latest
+            name: windows
+            script: .\packaging\build_exe.bat
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The build scripts expect the venv the developer machine has, so make one.
+      - name: Create venv and install dependencies
+        shell: bash
+        run: |
+          python -m venv venv
+          if [ "${{ matrix.name }}" = "windows" ]; then
+            ./venv/Scripts/python -m pip install --upgrade pip
+            ./venv/Scripts/pip install -r requirements.txt
+          else
+            ./venv/bin/python -m pip install --upgrade pip
+            ./venv/bin/pip install -r requirements.txt
+          fi
+
+      # Chromium needs system libraries that the GitHub runner image does not
+      # ship. Only Linux: the Windows build has no equivalent step.
+      - name: Install Chromium system dependencies
+        if: matrix.name == 'linux'
+        run: ./venv/bin/python -m playwright install-deps chromium
+
+      - name: Build
+        shell: bash
+        run: ${{ matrix.script }}
+
+      - name: Check the build actually produced something runnable
+        shell: bash
+        run: |
+          test -d dist/price_bot_gui || { echo "no dist/price_bot_gui"; exit 1; }
+          test -d dist/price_bot_gui/browsers || { echo "browsers were not bundled"; exit 1; }
+          # No database may ever ship — see the staging comment in build_exe.sh.
+          if find dist -name '*.db' | grep .; then echo "a database leaked into dist"; exit 1; fi
+          du -sh dist/price_bot_gui
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: price-bot-${{ matrix.name }}
+          path: dist/price_bot_gui
+          # Already ~670 MB of mostly-incompressible Chromium; re-compressing it
+          # costs minutes and saves little.
+          compression-level: 1
+          retention-days: 30

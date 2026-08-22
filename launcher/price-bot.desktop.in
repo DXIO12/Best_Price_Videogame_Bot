@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Price Bot
+GenericName=Price Tracker
+Comment=Track videogame prices across shops and get notified when one drops
+Exec=@REPO@/launcher/start_gui.sh
+Path=@REPO@
+Icon=@ICON@
+Terminal=false
+Categories=Utility;
+Keywords=price;tracker;videogame;bot;
+Actions=StartHeadless;StopBot;
+
+[Desktop Action StartHeadless]
+Name=Start bot (headless)
+Exec=@REPO@/launcher/start_bot.sh
+
+[Desktop Action StopBot]
+Name=Stop bot
+Exec=@REPO@/launcher/stop_bot.sh

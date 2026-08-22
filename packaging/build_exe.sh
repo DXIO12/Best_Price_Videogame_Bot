@@ -54,9 +54,31 @@ pyinstaller \
     --hidden-import "playwright.sync_api" \
     application/gui/main_window.py
 
+# ---------------------------------------------------------------------------
+# Browsers
+# ---------------------------------------------------------------------------
+# Downloaded straight into the distribution rather than copied out of the local
+# cache: PLAYWRIGHT_BROWSERS_PATH makes Playwright's own installer lay the files
+# out exactly where runtime_config.use_bundled_browsers() will look for them, on
+# every OS, with no path guessing.
+#
+# The full Chromium build, and --no-shell to skip the lightweight "headless
+# shell": BrowserManager passes channel="chromium" because some shops render no
+# price in the shell, so it would be 257 MB that never runs. ffmpeg comes along
+# with the chromium install and is only used for video recording, which nothing
+# here does — dropped afterwards.
+#
+# This is what lets a distributed copy work with no Python on the machine —
+# "playwright install chromium", which Playwright's error message tells the user
+# to run, is not a command they could execute.
+export PLAYWRIGHT_BROWSERS_PATH="$PWD/dist/price_bot_gui/browsers"
+echo "Downloading Chromium into the distribution (this is the slow part)..."
+python -m playwright install chromium --no-shell
+rm -rf "$PLAYWRIGHT_BROWSERS_PATH"/ffmpeg-*
+
 echo ""
 echo "Build complete. Executable is in dist/price_bot_gui/"
-echo "Remember, on the target machine:"
-echo "  1. run 'playwright install chromium'"
-echo "  2. put your .env NEXT TO the executable — a frozen build resolves it"
-echo "     from the working directory, not from the source tree."
+du -sh dist/price_bot_gui/
+echo ""
+echo "It is self-contained: Python, Chromium and all dependencies are inside."
+echo "The only setup left is the Telegram token, entered in Settings on first run."

@@ -54,10 +54,25 @@ pyinstaller ^
 
 rd /s /q "%STAGE%"
 
+REM ---------------------------------------------------------------------------
+REM Browsers
+REM ---------------------------------------------------------------------------
+REM Downloaded straight into the distribution rather than copied out of the local
+REM cache: PLAYWRIGHT_BROWSERS_PATH makes Playwright's own installer lay the files
+REM out exactly where runtime_config.use_bundled_browsers() will look for them.
+REM
+REM The full Chromium build, and --no-shell to skip the lightweight "headless
+REM shell": BrowserManager passes channel="chromium" because some shops render no
+REM price in the shell, so it would be 257 MB that never runs. ffmpeg comes along
+REM with the chromium install and is only used for video recording - dropped.
+set "PLAYWRIGHT_BROWSERS_PATH=%CD%\dist\price_bot_gui\browsers"
+echo Downloading Chromium into the distribution (this is the slow part)...
+python -m playwright install chromium --no-shell
+for /d %%D in ("%PLAYWRIGHT_BROWSERS_PATH%\ffmpeg-*") do rd /s /q "%%D"
+
 echo.
 echo Build complete. Executable is in dist\price_bot_gui\
-echo Remember, on the target machine:
-echo   1. run "playwright install chromium"
-echo   2. put your .env NEXT TO the executable - a frozen build resolves it
-echo      from the working directory, not from the source tree.
+echo.
+echo It is self-contained: Python, Chromium and all dependencies are inside.
+echo The only setup left is the Telegram token, entered in Settings on first run.
 pause
