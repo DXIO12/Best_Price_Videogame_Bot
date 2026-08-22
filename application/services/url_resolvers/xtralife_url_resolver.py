@@ -5,23 +5,45 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
+from application.services.url_resolvers.resolution import (
+    is_used,
+    is_bundle,
+    not_found,
+    only_used,
+    platform_matches_title,
+    resolved,
+    search_failed,
+    slug_as_text,
+    ranking_score,
+    title_match_ratio,
+    best_relevance,
+    is_best_available_match,
+    MIN_TITLE_MATCH_RATIO,
+)
 from urllib.parse import unquote_plus
 
 log = get_logger("resolver.xtralife")
 
 BASE_URL = "https://www.xtralife.com"
 
-# Maps our internal platform names → exact label Xtralife shows (before the count)
-# Labels look like "Switch (2)", "Switch 2 (181)", "PS5 (1)", etc.
-PLATFORM_MAP = {
-    "ps5":           "PS5",
-    "ps4":           "PS4",
-    "switch 2":      "Switch 2",
-    "switch":        "Switch",
-    "pc":            "PC",
-    "xbox series x": "Xbox Series",
-}
+CARD_SELECTOR = 'a.flex.ng-star-inserted[href*="/producto/"]'
 
+# The card's text block: a bold span with the product name, then a second span
+# with the platform and edition ("Switch 2 Edición Estándar").
+TITLE_WRAPPER_SELECTOR = "div.titleWrapper"
+TITLE_SELECTOR = "div.titleWrapper span.fontBold"
+
+# Xtralife lists the download code beside the boxed copy, at a different price
+# and under the same name — "Hollow Knight Silksong / Xbox Series Edición
+# Estándar, 19,99 €" is the digital one. The badge is the only thing that tells
+# them apart, since neither the title nor the URL says "digital".
+DIGITAL_FLAG_SELECTOR = "div.digitalFlag"
+
+# The second span also names the department, so a search for a game that has
+# tie-in merchandise ("Hollow Knight: El Libro Hueco — Libros Edición Estándar",
+# "Figura Skull Knight Berserk Figma — Figuras Edición Estándar") can be kept
+# out without depending on the "Juegos" quick filter having taken effect.
+NON_GAME_CATEGORIES = ("libros", "figuras", "merchandising", "ropa", "comics", "cómics")
 
 def _read_card_price(card) -> float | None:
     """
@@ -39,12 +61,41 @@ def _read_card_price(card) -> float | None:
     return None
 
 
+def _read_card(card) -> tuple[str, str, str, bool] | None:
+    """(href, title, subtitle, is_digital) for one card, or None if unreadable.
+
+    The subtitle is whatever `div.titleWrapper` holds beyond the bold title —
+    that is where the platform and the department live.
+    """
+    try:
+        href = card.get_attribute("href", timeout=2000)
+        if not href:
+            return None
+
+        title_node = card.locator(TITLE_SELECTOR).first
+        if not title_node.count():
+            return None
+        title = (title_node.inner_text(timeout=2000) or "").strip()
+        if not title:
+            return None
+
+        wrapper = card.locator(TITLE_WRAPPER_SELECTOR).first
+        whole = (wrapper.inner_text(timeout=2000) or "").strip() if wrapper.count() else title
+        subtitle = whole.replace(title, "", 1).strip()
+
+        digital = card.locator(DIGITAL_FLAG_SELECTOR).count() > 0
+
+        return href, title, subtitle, digital
+    except Exception:
+        return None
+
+
 def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
-    query = search_url.split("q=")[-1]
-    query = unquote_plus(query)
+    query = unquote_plus(search_url.split("q=")[-1])
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=resolve_headless())
+        # channel="chromium" — full browser, not the headless shell (2026-08-21).
+        browser = p.chromium.launch(headless=resolve_headless(), channel="chromium")
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -65,14 +116,15 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
 
         # Search
         try:
-            page.locator('input[placeholder="Buscar"]').click(timeout=5000)
-            page.locator('input[placeholder="Buscar"]').fill(query)
-            page.locator('input[placeholder="Buscar"]').press("Enter")
+            search_box = page.locator('input[placeholder="Buscar"]')
+            search_box.click(timeout=5000)
+            search_box.fill(query)
+            search_box.press("Enter")
             page.wait_for_timeout(3000)
         except PlaywrightTimeout:
             log.warning("Search input not found.")
             browser.close()
-            return None
+            return search_failed()
 
         # Click "Juegos" quick filter
         try:
@@ -81,107 +133,90 @@ def resolve_xtralife_product_url(search_url: str, platform: str | None = None):
             juegos_filter.click(timeout=5000)
             page.wait_for_timeout(2000)
         except Exception as e:
-            log.warning(f"Juegos filter error: {e}")
+            log.debug(f"Juegos filter not applied: {e}")
 
-        # Platform filter
-        if platform:
-            keyword = PLATFORM_MAP.get(platform.strip().lower())
-
-            if keyword:
-                try:
-                    page.locator('filter-select').filter(
-                        has_text="Plataforma"
-                    ).first.click(timeout=5000)
-                    page.wait_for_timeout(1000)
-
-                    options = page.locator(
-                        'div.filter-select-list div.scroll div.option div.label'
-                    ).all()
-                    matched = False
-                    for option in options:
-                        try:
-                            raw_label = option.inner_text(timeout=1500).strip()
-                            # Strip trailing count: "Switch (1)" → "Switch"
-                            label_clean = re.sub(r'\s*\(\d+\)\s*$', '', raw_label).strip()
-                            # Exact match after stripping count
-                            if label_clean.lower() == keyword.lower():
-                                option.click()
-                                matched = True
-                                page.wait_for_timeout(500)
-                                break
-                        except Exception:
-                            continue
-
-                    if matched:
-                        try:
-                            page.locator(
-                                'div.filter-select-list div.action-buttons div.tag'
-                            ).first.click(timeout=5000)
-                            page.wait_for_timeout(3000)
-                        except Exception as e:
-                            log.warning(f"Apply filter error: {e}")
-                    else:
-                        page.keyboard.press("Escape")
-                        page.wait_for_timeout(500)
-
-                except Exception as e:
-                    log.warning(f"Platform filter error: {e}")
+        # The shop's Plataforma facet is deliberately NOT applied. Letting
+        # Xtralife pre-filter blinds the name check below: with only Switch
+        # cards on the page, a search for "Hollow Knight Silksong" sees plain
+        # "Hollow Knight" as the best match available and takes it, while the
+        # Silksong cards it should have lost to sit one facet away, unread.
+        # Every card states its own platform in the subtitle, so filtering here
+        # loses nothing and removes a flaky UI interaction.
 
         # Grab product cards
         try:
             page.wait_for_timeout(2000)
-            page.wait_for_selector(
-                'a.flex.ng-star-inserted[href*="/producto/"]', timeout=10000
-            )
-            cards = page.locator(
-                'a.flex.ng-star-inserted[href*="/producto/"]'
-            ).all()[:5]
+            page.wait_for_selector(CARD_SELECTOR, state="attached", timeout=10000)
+            cards = page.locator(CARD_SELECTOR).all()[:40]
         except PlaywrightTimeout:
-            log.warning("No product cards found.")
+            # Nothing rendered. Xtralife shows no empty state this resolver can
+            # read, so the honest answer is "we do not know" — retry.
+            log.warning(f"No result cards for '{query}'.")
             browser.close()
-            return None
+            return search_failed()
 
-        # Score each card by how many words from the product name appear in the card title
-        query_words = set(re.sub(r"[^a-z0-9\s]", "", query.lower()).split())
+        # Pass 1 — read every card before any filtering, so the name match
+        # can be judged against the whole page (see is_best_available_match).
+        rows = []
+        for card in cards:
+            read = _read_card(card)
+            if read:
+                rows.append(read)
 
-        best_href = None
-        best_score = -1
-        first_href = None
-
-        for i, card in enumerate(cards):
-            try:
-                href = card.get_attribute("href", timeout=2000)
-                if not href:
-                    continue
-                if first_href is None:
-                    first_href = href
-
-                # Read the card title from titleWrapper
-                try:
-                    title_raw = card.locator(
-                        "div.titleWrapper span.fontBold"
-                    ).first.inner_text(timeout=2000).strip()
-                except Exception:
-                    title_raw = ""
-
-                title_words = set(re.sub(r"[^a-z0-9\s]", "", title_raw.lower()).split())
-                score = len(query_words & title_words)
-
-                if score > best_score:
-                    best_score = score
-                    best_href = href
-
-            except Exception:
-                pass
         browser.close()
 
-        result_href = best_href or first_href
-        if not result_href:
-            log.debug("No valid product URL found.")
-            return None
+    best_ratio = best_relevance(query, [title for _, title, _, _ in rows])
 
-        result = (
-            result_href if result_href.startswith("http")
-            else f"{BASE_URL}{result_href}"
+    # Pass 2 — physical, on-platform, and as good a name match as any card here.
+    candidates = []    # (score, href, title)
+    used_matches = []
+
+    for href, title, subtitle, digital in rows:
+        if digital:
+            continue
+
+        # A pack or a console bundle contains the game but is not the game.
+        if is_bundle(title):
+            continue
+
+        lowered_subtitle = subtitle.lower()
+        if any(category in lowered_subtitle for category in NON_GAME_CATEGORIES):
+            continue
+
+        # The platform is in the subtitle; the URL slug repeats it, and is used
+        # when the subtitle could not be read. Both go through the shared
+        # matcher so "switch 2" never answers a "switch" search.
+        platform_text = subtitle if subtitle else slug_as_text(href)
+        on_platform = platform_matches_title(platform, platform_text)
+        ratio = title_match_ratio(query, title)
+        relevant = (
+            ratio >= MIN_TITLE_MATCH_RATIO
+            and is_best_available_match(ratio, best_ratio)
         )
-        return result
+
+        if is_used(f"{title} {subtitle}"):
+            if relevant and on_platform:
+                used_matches.append(title)
+            continue
+
+        if not on_platform or not relevant:
+            continue
+
+        # The old code took `best_href or first_href` starting from
+        # `best_score = -1`, so a card sharing zero words with the query still
+        # won. The floor above stops that; the page-wide gate is what stops
+        # plain "Hollow Knight" answering a search for "Hollow Knight Silksong".
+        candidates.append((ranking_score(query, title), href, title))
+
+    if not candidates:
+        if used_matches:
+            log.debug(f"Only second-hand copies: {used_matches[0]}")
+            return only_used()
+        log.debug(f"No {platform} copy matching '{query}'.")
+        return not_found()
+
+    best = max(candidates)
+    href = best[1]
+    url = href if href.startswith("http") else f"{BASE_URL}{href}"
+    log.debug(f"Resolved: {url} ({best[2]})")
+    return resolved(url)

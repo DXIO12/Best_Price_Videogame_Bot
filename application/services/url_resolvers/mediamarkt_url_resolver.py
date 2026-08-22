@@ -5,6 +5,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from application.services.url_resolvers.resolution import (
+    is_bundle,
     is_used,
     not_found,
     only_used,
@@ -112,6 +113,13 @@ def resolve_mediamarkt_product_url(search_url: str, platform: str | None = None)
 
             if is_used(title):
                 used_matches.append(title)
+                continue
+
+            # "Consola portátil Nintendo Switch 2 Mario Kart World 256 GB"
+            # passes both tests above legitimately — it really is a Switch 2
+            # listing and it really does name the game — but it is a console
+            # with the game in the box, at console prices.
+            if is_bundle(title):
                 continue
 
             try:

@@ -8,7 +8,13 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from application.config.logger import get_logger
 from application.config.runtime_config import resolve_headless
 from application.services.url_resolvers.resolution import (
+    is_bundle,
+    not_found,
+    resolved,
+    search_failed,
     title_match_ratio,
+    best_relevance,
+    is_best_available_match,
     MIN_TITLE_MATCH_RATIO,
 )
 
@@ -54,6 +60,13 @@ KNOWN_REGIONS = PAL_ES_REGIONS | {
 # Playwright locators, which do pierce open shadow roots.
 RESULT_SELECTOR = '[data-test="result"]'
 RESULT_LINK_SELECTOR = '[data-test="result-link"]'
+
+# The overlay's own empty state. This is what separates NOT_FOUND from
+# SEARCH_FAILED here: a query with no hits renders `no-results-info` and zero
+# `result` cards, while an overlay that never booted renders neither. Without
+# it, "TodoConsolas does not stock this" was indistinguishable from "the search
+# app failed to start", so every genuine miss took the full six-retry ladder.
+NO_RESULTS_SELECTOR = '[data-test="no-results-info"]'
 FACET_SELECTOR = '.x-mot-facet'
 FILTER_SELECTOR = '[data-test="filter"]'
 
@@ -137,6 +150,12 @@ def _pick_best_card(cards: list[dict], query: str, platform: str | None) -> str 
     """
     wanted_slug = PLATFORM_SLUGS.get(platform.strip().lower()) if platform else None
 
+    # How well the best card on the page matches the name, before the platform
+    # narrows anything. A card that matches less well than this one is a
+    # different product, however good its ratio looks on its own — see
+    # is_best_available_match.
+    best_ratio = best_relevance(query, [card["title"] for card in cards])
+
     scored = []
     for position, card in enumerate(cards):
         href, title = card["href"], card["title"]
@@ -144,12 +163,15 @@ def _pick_best_card(cards: list[dict], query: str, platform: str | None) -> str 
         if wanted_slug and _card_slug(href) != wanted_slug:
             continue
 
+        if is_bundle(title):
+            continue
+
         region = _title_region(title)
         if region is not None and region not in PAL_ES_REGIONS:
             continue
 
         ratio = title_match_ratio(query, title)
-        if ratio < MIN_TITLE_MATCH_RATIO:
+        if ratio < MIN_TITLE_MATCH_RATIO or not is_best_available_match(ratio, best_ratio):
             continue
 
         scored.append((1 if region in PAL_ES_REGIONS else 0, ratio, -position, href))
@@ -204,21 +226,34 @@ def resolve_todoconsolas_product_url(search_url: str, platform: str | None = Non
             except Exception as goto_error:
                 log.error(f"Could not open the search page: {goto_error}")
                 browser.close()
-                return None
+                return search_failed()
 
         try:
             page.wait_for_selector(RESULT_SELECTOR, timeout=20000)
         except PlaywrightTimeout:
-            log.debug(f"No results for '{query}'.")
+            # No cards. The shop's own empty state is the only thing that says
+            # whether that is an answer or a failure.
+            empty_state = page.locator(NO_RESULTS_SELECTOR).count() > 0
             browser.close()
-            return None
+            if empty_state:
+                log.debug(f"Shop reports no results for '{query}'.")
+                return not_found()
+            log.warning(f"Search overlay never rendered for '{query}'.")
+            return search_failed()
 
         # Restrict to the Spanish edition, then to new copies. Second-hand is
         # only accepted when the shop offers no new one.
+        #
+        # A missing region facet is NOT "no PAL/ES stock" — the shop renders a
+        # facet only when its results actually split on it, so a search whose
+        # hits are all Spanish editions offers no region facet at all. Bailing
+        # out here reported SEARCH_FAILED for products TodoConsolas plainly
+        # stocks ("Hollow Knight: Silksong Switch 2 (SP)" — two hits, no region
+        # facet). The `(SP)` / `(UK)` suffix that `_title_region` reads is the
+        # fallback that was always meant to cover this case; it never ran
+        # because of the early return.
         if not _apply_filter(page, REGION_FACET, REGION_FILTER):
-            log.debug(f"No PAL/ES stock for '{query}'.")
-            browser.close()
-            return None
+            log.debug(f"No region facet for '{query}' — falling back to titles.")
 
         if not _apply_filter(page, CONDITION_FACET, NEW_FILTER):
             log.debug("No new copy, falling back to second-hand.")
@@ -228,7 +263,9 @@ def resolve_todoconsolas_product_url(search_url: str, platform: str | None = Non
 
     href = _pick_best_card(cards, query, platform)
     if not href:
+        # The cards rendered and were read; none of them is the product on the
+        # requested platform. That is the shop's answer, not a failure.
         log.debug(f"No match for '{query}' on {platform}.")
-        return None
+        return not_found()
 
-    return href if href.startswith("http") else f"{BASE_URL}{href}"
+    return resolved(href if href.startswith("http") else f"{BASE_URL}{href}")
