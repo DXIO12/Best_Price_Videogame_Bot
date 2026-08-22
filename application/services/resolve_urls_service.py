@@ -28,11 +28,11 @@ from datetime import datetime, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
-from database.db import SessionLocal
-from database.models import Product, ProductShop
+from application.database.db import SessionLocal
+from application.database.models import Product, ProductShop
 
-from services.url_search_service import get_search_url
-from services.url_resolvers.resolution import (
+from application.services.url_search_service import get_search_url
+from application.services.url_resolvers.resolution import (
     ResolutionResult,
     ResolutionStatus,
     TERMINAL_STATUSES,
@@ -40,13 +40,13 @@ from services.url_resolvers.resolution import (
     search_failed,
 )
 
-from services.url_resolvers.amazon_url_resolver import resolve_amazon_product_url
-from services.url_resolvers.game_url_resolver import resolve_game_product_url
-from services.url_resolvers.mediamarkt_url_resolver import resolve_mediamarkt_product_url
-from services.url_resolvers.pccomponentes_url_resolver import resolve_pccomponentes_product_url
-from services.url_resolvers.todoconsolas_url_resolver import resolve_todoconsolas_product_url
-from services.url_resolvers.wakkap_url_resolver import resolve_wakkap_product_url
-from services.url_resolvers.xtralife_url_resolver import resolve_xtralife_product_url
+from application.services.url_resolvers.amazon_url_resolver import resolve_amazon_product_url
+from application.services.url_resolvers.game_url_resolver import resolve_game_product_url
+from application.services.url_resolvers.mediamarkt_url_resolver import resolve_mediamarkt_product_url
+from application.services.url_resolvers.pccomponentes_url_resolver import resolve_pccomponentes_product_url
+from application.services.url_resolvers.todoconsolas_url_resolver import resolve_todoconsolas_product_url
+from application.services.url_resolvers.wakkap_url_resolver import resolve_wakkap_product_url
+from application.services.url_resolvers.xtralife_url_resolver import resolve_xtralife_product_url
 
 
 # Map shop name (lower) → resolver function

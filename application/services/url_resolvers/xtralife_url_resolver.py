@@ -3,7 +3,7 @@
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from config.runtime_config import resolve_headless
+from application.config.runtime_config import resolve_headless
 from urllib.parse import unquote_plus
 
 BASE_URL = "https://www.xtralife.com"

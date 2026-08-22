@@ -1,5 +1,5 @@
-from shops.playwright_utils import chromium_page
-from shops.price_utils import extract_price
+from application.shops.playwright_utils import chromium_page
+from application.shops.price_utils import extract_price
 
 
 # The product page shows the current price and, right below it, the "PVPR"

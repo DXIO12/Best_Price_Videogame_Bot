@@ -1,7 +1,7 @@
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from config.runtime_config import resolve_headless
+from application.config.runtime_config import resolve_headless
 
 
 def clean_amazon_url(href: str) -> str | None:

@@ -14,8 +14,9 @@ Source of truth is the DB ``Setting.debug_mode`` column; it is mirrored to
     PRICE_BOT_DEBUG env (``1``/``0``)  →  DB Setting.debug_mode  →
     config.json ["debug_mode"]  →  frozen default (dev=True, exe=False)
 
-This module only depends on the stdlib and the ``database`` package, so it can
-be imported from anywhere (GUI, bot, shops, resolvers) without import cycles.
+This module only depends on the stdlib and the ``application.database``
+package, so it can be imported from anywhere (GUI, bot, shops, resolvers)
+without import cycles.
 """
 
 import json
@@ -33,23 +34,23 @@ def base_dir() -> Path:
     """Writable base directory: next to the executable when frozen, else the
     repo root.
 
-    This module lives in ``<repo>/config/runtime_config.py``, so the repo root
-    is two levels up from this file. Public because
+    This module lives in ``<repo>/application/config/runtime_config.py``, so the
+    repo root is three levels up from this file. Public because
     ``language_selector.translator`` also needs it, to find user-dropped
     language catalogs."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
+    return Path(__file__).resolve().parent.parent.parent
 
 
 def config_json_path() -> Path:
     """Location of the mirrored ``config.json``.
 
-    Dev keeps the existing ``bot/config.json``; a frozen build writes next to
-    the executable (the bundled ``bot/`` dir is read-only)."""
+    Dev keeps the existing ``application/bot/config.json``; a frozen build writes
+    next to the executable (the bundled ``bot/`` dir is read-only)."""
     if getattr(sys, "frozen", False):
         return base_dir() / "config.json"
-    return base_dir() / "bot" / "config.json"
+    return base_dir() / "application" / "bot" / "config.json"
 
 
 def log_file_path() -> Path:
@@ -104,8 +105,8 @@ def get_debug_mode() -> bool:
 
     # 2. DB Setting (source of truth). Guarded: the table may not exist yet.
     try:
-        from database.db import SessionLocal
-        from database.models import Setting
+        from application.database.db import SessionLocal
+        from application.database.models import Setting
 
         db = SessionLocal()
         try:

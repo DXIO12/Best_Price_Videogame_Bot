@@ -1,6 +1,6 @@
-from database.db import SessionLocal
+from application.database.db import SessionLocal
 from sqlalchemy.orm import joinedload
-from database.models import (Product, ProductShop, Platform, product_platforms)
+from application.database.models import (Product, ProductShop, Platform, product_platforms)
 
 # Maps GUI display labels → DB-stored names (and reverse).
 # Update this dict whenever a platform is renamed in the DB.

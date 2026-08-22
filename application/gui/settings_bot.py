@@ -14,10 +14,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal
 
-from database.db import SessionLocal
-from database.models import Setting
-from config.runtime_config import get_debug_mode, write_config_settings
-from language_selector import available_languages, get_language, set_language, tr
+from application.database.db import SessionLocal
+from application.database.models import Setting
+from application.config.runtime_config import get_debug_mode, write_config_settings
+from application.language_selector import available_languages, get_language, set_language, tr
 
 
 DEFAULTS = {

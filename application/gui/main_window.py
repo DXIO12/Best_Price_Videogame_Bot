@@ -1,13 +1,13 @@
 import sys
 import threading
-from config.runtime_config import init_runtime_mode
-from bot.bot import load_settings
-from gui.add_product_dialog import AddProductDialog, get_available_shops
-from gui.delete_product_dialog import DeleteProductDialog
-from gui.modify_product_dialog import ModifyProductDialog
-from gui.settings_bot import SettingsBotDialog
-from language_selector import init_language, tr
-from services.product_service import (
+from application.config.runtime_config import init_runtime_mode
+from application.bot.bot import load_settings
+from application.gui.add_product_dialog import AddProductDialog, get_available_shops
+from application.gui.delete_product_dialog import DeleteProductDialog
+from application.gui.modify_product_dialog import ModifyProductDialog
+from application.gui.settings_bot import SettingsBotDialog
+from application.language_selector import init_language, tr
+from application.services.product_service import (
     get_products_with_shops,
     to_gui_names,
     get_platform_priorities,
@@ -18,8 +18,8 @@ from services.product_service import (
 from PyQt6 import sip
 from PyQt6.QtCore import QThreadPool, Qt, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui import QCursor
-from database.db import SessionLocal
-from database.models import ProductShop, Setting
+from application.database.db import SessionLocal
+from application.database.models import ProductShop, Setting
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -37,11 +37,11 @@ from PyQt6.QtWidgets import (
     QToolTip
 )
 
-from gui import icons
-from gui.bot_worker import BotWorker
-from services.resolver_worker import ResolverWorker, RetryWorker
-from services.resolve_urls_service import MAX_RETRIES
-from services.url_resolvers.resolution import ResolutionStatus
+from application.gui import icons
+from application.gui.bot_worker import BotWorker
+from application.services.resolver_worker import ResolverWorker, RetryWorker
+from application.services.resolve_urls_service import MAX_RETRIES
+from application.services.url_resolvers.resolution import ResolutionStatus
 
 
 class PriorityTableWidget(QTableWidget):

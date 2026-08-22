@@ -2,8 +2,8 @@ from urllib.parse import quote_plus
 
 from sqlalchemy.orm import joinedload
 
-from database.db import SessionLocal
-from database.models import Product, ProductShop
+from application.database.db import SessionLocal
+from application.database.models import Product, ProductShop
 
 # Shops that determine the platform themselves — from an on-site facet
 # (wakkap, xtralife) or from the product URL slug the resolver matches against

@@ -10,7 +10,7 @@ from sqlalchemy import (
     DateTime
 )
 
-from database.db import Base
+from application.database.db import Base
 
 product_platforms = Table(
     "product_platforms",

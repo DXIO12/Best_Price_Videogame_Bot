@@ -1,5 +1,5 @@
-from services.product_service import create_product, get_platform_priorities
-from language_selector import tr
+from application.services.product_service import create_product, get_platform_priorities
+from application.language_selector import tr
 from PyQt6.QtCore import pyqtSignal, QTimer, QPoint
 from PyQt6.QtWidgets import (
     QDialog,

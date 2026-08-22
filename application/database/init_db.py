@@ -1,6 +1,6 @@
 from sqlalchemy import text
-from database.db import engine, SessionLocal
-from database.models import Base, Platform, product_platforms
+from application.database.db import engine, SessionLocal
+from application.database.models import Base, Platform, product_platforms
 
 Base.metadata.create_all(bind=engine)
 

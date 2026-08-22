@@ -1,5 +1,5 @@
-from database.db import SessionLocal
-from database.models import Platform
+from application.database.db import SessionLocal
+from application.database.models import Platform
 
 platforms = [
     "PS5",

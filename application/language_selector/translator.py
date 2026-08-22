@@ -29,7 +29,7 @@ import json
 import os
 from pathlib import Path
 
-from config.runtime_config import base_dir, read_config_json
+from application.config.runtime_config import base_dir, read_config_json
 
 
 DEFAULT_LANGUAGE = "en"
@@ -140,8 +140,8 @@ def resolve_language() -> str:
     #    tracker.db from before this feature has no "language" column, and an
     #    unguarded query would raise "no such column" and abort startup.
     try:
-        from database.db import SessionLocal
-        from database.models import Setting
+        from application.database.db import SessionLocal
+        from application.database.models import Setting
 
         db = SessionLocal()
         try:

@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 from playwright.sync_api import sync_playwright
 
-from config.runtime_config import resolve_headless
+from application.config.runtime_config import resolve_headless
 
 
 DEFAULT_USER_AGENT = (

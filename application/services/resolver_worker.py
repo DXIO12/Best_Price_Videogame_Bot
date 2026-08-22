@@ -7,7 +7,7 @@ Emits signals for started, finished (with results), and error.
 
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 
-from services.resolve_urls_service import resolve_urls_for_products, retry_due_shops
+from application.services.resolve_urls_service import resolve_urls_for_products, retry_due_shops
 
 
 class ResolverWorkerSignals(QObject):

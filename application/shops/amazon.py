@@ -1,5 +1,5 @@
-from shops.playwright_utils import chromium_page
-from shops.price_utils import extract_price
+from application.shops.playwright_utils import chromium_page
+from application.shops.price_utils import extract_price
 
 
 # Only look for a price inside the main-product price region. Searching the whole

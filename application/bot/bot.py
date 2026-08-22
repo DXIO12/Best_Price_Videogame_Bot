@@ -8,26 +8,26 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from bot.notifier import send_telegram_message
+from application.bot.notifier import send_telegram_message
 
-from shops.amazon import get_amazon_price
-from shops.game import get_game_price
-from shops.pccomponentes import get_pccomponentes_price
-from shops.xtralife import get_xtralife_price
-from shops.wakkap import get_wakkap_price
-from shops.mediamarkt import get_mediamarkt_price
-from shops.corteingles import get_elcorteingles_price
-from shops.carrefour import get_carrefour_price
-from shops.todoconsolas import get_todoconsolas_price
-from shops.playwright_utils import stop_browser
+from application.shops.amazon import get_amazon_price
+from application.shops.game import get_game_price
+from application.shops.pccomponentes import get_pccomponentes_price
+from application.shops.xtralife import get_xtralife_price
+from application.shops.wakkap import get_wakkap_price
+from application.shops.mediamarkt import get_mediamarkt_price
+from application.shops.corteingles import get_elcorteingles_price
+from application.shops.carrefour import get_carrefour_price
+from application.shops.todoconsolas import get_todoconsolas_price
+from application.shops.playwright_utils import stop_browser
 
-from config.runtime_config import get_debug_mode
-from language_selector import tr
+from application.config.runtime_config import get_debug_mode
+from application.language_selector import tr
 
 from sqlalchemy import func
 
-from database.db import SessionLocal
-from database.models import Product, ProductShop, Setting, product_platforms
+from application.database.db import SessionLocal
+from application.database.models import Product, ProductShop, Setting, product_platforms
 
 
 # =========================================================
@@ -582,7 +582,7 @@ def _scrape_parallel(records_by_product: dict, product_names: dict,
 # =========================================================
 
 if __name__ == "__main__":
-    from config.runtime_config import init_runtime_mode
+    from application.config.runtime_config import init_runtime_mode
 
     # Console/log setup + headless resolution before scraping starts.
     init_runtime_mode()

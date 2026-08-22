@@ -1,11 +1,11 @@
-from services.product_service import (
+from application.services.product_service import (
     delete_products,
     get_products,
     delete_product_platforms,
     get_platform_priorities,
     to_gui_names,
 )
-from language_selector import tr
+from application.language_selector import tr
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,

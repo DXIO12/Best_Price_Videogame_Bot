@@ -1,6 +1,6 @@
 """Internationalization package. See ``translator`` for the how and why."""
 
-from language_selector.translator import (
+from application.language_selector.translator import (
     DEFAULT_LANGUAGE,
     available_languages,
     get_language,

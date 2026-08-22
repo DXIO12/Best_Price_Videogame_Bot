@@ -4,8 +4,8 @@ from urllib.parse import urlparse, parse_qs, unquote_plus
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from config.runtime_config import resolve_headless
-from services.url_resolvers.resolution import (
+from application.config.runtime_config import resolve_headless
+from application.services.url_resolvers.resolution import (
     is_used,
     not_found,
     only_used,

@@ -1,14 +1,14 @@
-from services.product_service import (
+from application.services.product_service import (
     modify_product,
     apply_shop_changes,
     get_products,
     to_gui_names,
     get_platform_priorities,
 )
-from gui.add_product_dialog import MultiSelectDropdown, get_available_shops
-from language_selector import tr
-from database.db import SessionLocal
-from database.models import ProductShop
+from application.gui.add_product_dialog import MultiSelectDropdown, get_available_shops
+from application.language_selector import tr
+from application.database.db import SessionLocal
+from application.database.models import ProductShop
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QDialog,
