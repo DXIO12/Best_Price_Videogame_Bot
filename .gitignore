@@ -21,6 +21,16 @@ improvements.md
 last_prices.json
 
 # =========================================
+# Backups
+# =========================================
+
+# `*.db` above only matches names that *end* in .db, so a copy named
+# tracker.db.bak-20260822-111558 slipped through and showed up as untracked.
+# Both shapes a backup usually takes are covered here.
+*.bak*
+*.db.*
+
+# =========================================
 # Runtime logs
 # =========================================
 logs/
