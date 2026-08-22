@@ -1,0 +1,19 @@
+# Runtime dependencies. Pinned to the versions this project is developed and
+# tested against (Python 3.12).
+#
+# This list is deliberately hand-kept, not `pip freeze`: the working venv also
+# carries packages nothing under `application/` imports. Every entry below
+# corresponds to a real top-level import — see docs/dependencies.md.
+#
+# After installing, fetch the browser Playwright drives:
+#     playwright install chromium
+
+APScheduler==3.11.2
+playwright==1.59.0
+PyQt6==6.11.0
+python-dotenv==1.2.2
+requests==2.33.1
+SQLAlchemy==2.0.49
+
+# PyInstaller is not listed here: it is only needed to produce a distributable,
+# and packaging/build_exe.sh installs it on demand.

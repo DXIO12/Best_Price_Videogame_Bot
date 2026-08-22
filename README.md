@@ -12,7 +12,100 @@ You can check the detailed [Project Structure & Component Description](docs/proj
 
 ---
 
-More information will be added after the project is finished.
+## Getting Started
+
+### Requirements
+
+Python 3.11 or newer. Nothing else needs to be installed system-wide.
+
+### 1. Set up the environment — once
+
+```bash
+git clone <this-repo> && cd price-bot
+python -m venv venv
+```
+
+Activate it, then install:
+
+```bash
+source venv/bin/activate          # Linux / macOS
+venv\Scripts\activate.bat         # Windows
+
+pip install -r requirements.txt
+playwright install chromium
+```
+
+The last line is **not optional**. Playwright ships no browser of its own, and every price
+scraper needs Chromium.
+
+### 2. Connect Telegram — once
+
+Alerts arrive over Telegram, so the app needs a bot of your own:
+
+1. Message **@BotFather** on Telegram, send `/newbot`, follow the prompts — it replies with a
+   **token**
+2. Message **@userinfobot**, which replies with your **chat ID**
+3. In the app: **gear icon → Application**, paste both, and press **Send a test message**
+
+Open a chat with your own bot and press *Start* before testing — Telegram blocks bots from
+messaging anyone who has not spoken to them first.
+
+Credentials are stored in the local database, never in a file that is shared or committed.
+A `.env` in the project root with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` still works as
+a fallback if you prefer it.
+
+### 3. Install the desktop launcher — optional, recommended
+
+Adds **Price Bot** to your application menu so it opens with a double click.
+
+```bash
+./launcher/install_launcher.sh                                          # Linux
+```
+```powershell
+powershell -ExecutionPolicy Bypass -File launcher\install_launcher.ps1 -Desktop   # Windows
+```
+
+Left click opens the app. Right click offers *Start bot (headless)* and *Stop bot*.
+Pass `--uninstall` (Linux) or `-Uninstall` (Windows) to remove it again.
+
+### 4. Run it
+
+Either from the menu entry above, or directly:
+
+| | Linux / macOS | Windows |
+| --- | --- | --- |
+| Desktop app | `./launcher/start_gui.sh` | `launcher\start_gui.bat` |
+| Headless bot | `./launcher/start_bot.sh` | `launcher\start_bot.bat` |
+| Stop the bot | `./launcher/stop_bot.sh` | `launcher\stop_bot.bat` |
+
+### 5. First use
+
+From the app window:
+
+1. **Settings Bot** — how often to check, and how notifications behave
+2. **Add Product** — the games you want to track, with a target price
+3. **Update URLs** — resolves each shop's product page automatically
+4. **Start Bot** — runs a price check right away
+
+Run the headless bot only *after* configuring products in the app: it has no settings
+interface of its own.
+
+### Sharing it with someone else
+
+```bash
+./packaging/build_exe.sh      # build, and download Chromium into the distribution
+./packaging/make_release.sh   # zip it, end-user guide included
+```
+
+The result is self-contained — Python, Chromium and every dependency are inside. The person
+you send it to unzips it, opens the executable, and pastes a Telegram token into Settings.
+Nothing to install.
+
+A Windows `.exe` has to be **built on Windows**; PyInstaller does not cross-compile. The
+`Build distribution` workflow under the Actions tab does both platforms on GitHub's runners.
+
+> Full details for every script — including what each folder is for — are in the
+> [Launch documentation](docs/Lauch_Price_Bot_Documentation.md).
 
 ---
 
