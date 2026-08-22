@@ -155,10 +155,17 @@ package (GUI, bot, shops, resolvers) can import it without creating a cycle.
 | `runtime_config.py` | Resolves the effective `debug_mode` flag (`PRICE_BOT_DEBUG` env → DB `Setting.debug_mode` → `config.json` → frozen default) and applies its two effects: `resolve_headless()` for Playwright, and `init_runtime_mode(process)` for the console + log setup. Owns the *paths*: `base_dir()` (repo root in dev, next to the executable when frozen), `config_json_path()`, `log_dir()` and `log_file_path(process)`. Entry points pass their own name — `init_runtime_mode("gui")` / `("bot")` — which is what picks the log file. |
 | `logger.py` | Owns the *handlers*. `get_logger("<area>")` returns the `price_bot.<area>` logger every module writes through; `setup_logging()` attaches a `RotatingFileHandler` (1 MiB × 3 backups) plus a console handler, and redirects `sys.stdout` / `sys.stderr` into the logger so third-party output still reaches the file. Also `install_excepthook()`. Deliberately imports nothing from the app — it is handed the path it should write to, which is what lets `runtime_config` import it without a cycle. |
 
-**Log levels are the volume knob, and `debug_mode` turns it.** A release run logs at
-`INFO`, a debug run at `DEBUG`. The per-shop narration (`Scraping Amazon…`,
-`54.9€ — above target.`, `already has URL, skipping`) is all `DEBUG`, so it never
-reaches a release log — that chatter was ~70% of the old log's volume. `INFO` keeps
+**The level lives on the handlers, not on the logger — the console and the file want
+different things.** The console always shows everything: a terminal is open precisely
+to watch a pass run. The *file* is what `debug_mode` filters — a release run writes
+`INFO` and above, a debug run writes everything. The per-shop narration
+(`Scraping Amazon…`, `54.9€ — above target.`, `already has URL, skipping`,
+the parallel `[ 1/73]` counter) is all `DEBUG`, so it stays on screen but never
+reaches a release log file — that chatter was ~70% of the old log's volume.
+
+Putting the level on the logger instead ties the two together, and since `debug_mode`
+*also* decides whether Playwright runs headless, a readable terminal would cost four
+visible Chromium windows. `INFO` keeps
 the story worth reading later: alerts, best prices, resolved URLs, and the changes the
 user makes in the GUI. `WARNING` is "you should know, but nothing crashed" (no URL set,
 no scraper, a search that did not render); `ERROR` is failures and unhandled exceptions.

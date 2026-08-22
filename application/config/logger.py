@@ -10,15 +10,18 @@ Two formats on purpose:
 * **file** — timestamp, level and logger name, so a log read days later says
   *when* something happened and *who* said it.
 
-Levels are the volume knob, driven by ``debug_mode``:
+Levels:
 
 * ``DEBUG``   per-shop narration (``Scraping Amazon…``, ``54.9€ — above target.``)
 * ``INFO``    the story worth keeping: alerts, resolved URLs, user actions
 * ``WARNING`` the user should know, but nothing failed (no URL set, no scraper)
 * ``ERROR``   failures and unhandled exceptions
 
-A release run logs at ``INFO``, so the per-shop chatter — about 70% of the old
-log's volume — never reaches the file. A debug run keeps everything.
+**The console always shows everything; the file is what ``debug_mode`` filters.**
+A terminal is open to watch a pass run, so it gets the narration either way. In
+the file that same narration is ~70% of the volume and worthless a day later, so
+a release run writes only ``INFO`` and above there. A debug run keeps everything
+in both.
 
 Nothing here imports the rest of the app: ``setup_logging`` is handed the path it
 should write to. That keeps ``config.runtime_config`` (which owns paths and the
@@ -140,11 +143,24 @@ def setup_logging(process: str, debug: bool, log_path: Path) -> None:
 
     ``process`` ("gui", "bot", …) only names the session header — the file it
     goes to is already decided by ``log_path``. Idempotent: a second call just
-    re-applies the level."""
+    re-applies the levels.
+
+    **The level lives on the handlers, not on the logger**, because the console
+    and the file want different things. Watching a pass run — "Scraping Game…",
+    each price as it lands, the parallel progress counter — is the whole point of
+    having a terminal open, and that is true whether or not the run is a debug
+    one. Keeping every record in the *file* is a different question: there the
+    same narration is 70% of the volume and says nothing once the pass is over.
+    Putting the level on the logger tied the two together, and since ``debug``
+    also decides whether the browsers are visible, a readable terminal meant four
+    Chromium windows on screen."""
     app = logging.getLogger(LOGGER_ROOT)
-    app.setLevel(logging.DEBUG if debug else logging.INFO)
+    app.setLevel(logging.DEBUG)  # handlers below decide what survives
 
     if app.handlers:
+        for handler in app.handlers:
+            if isinstance(handler, logging.handlers.RotatingFileHandler):
+                handler.setLevel(logging.DEBUG if debug else logging.INFO)
         return
 
     # Records reach the file through this logger's own handler. Without this,
@@ -161,6 +177,7 @@ def setup_logging(process: str, debug: bool, log_path: Path) -> None:
             encoding="utf-8",
             errors="replace",
         )
+        file_handler.setLevel(logging.DEBUG if debug else logging.INFO)
         file_handler.setFormatter(logging.Formatter(FILE_FORMAT, DATE_FORMAT))
         file_handler.addFilter(_ConsoleOnlyFilter())
         app.addHandler(file_handler)
@@ -173,6 +190,8 @@ def setup_logging(process: str, debug: bool, log_path: Path) -> None:
     console_stream = sys.stdout
     if console_stream is not None:  # a --windowed exe has no stdout at all
         console = logging.StreamHandler(console_stream)
+        # Always DEBUG: a terminal is open precisely to watch the run happen.
+        console.setLevel(logging.DEBUG)
         console.setFormatter(logging.Formatter(CONSOLE_FORMAT))
         app.addHandler(console)
 
