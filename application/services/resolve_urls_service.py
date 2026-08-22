@@ -1,0 +1,361 @@
+"""
+resolve_urls_service.py
+=======================
+Resolves missing ProductShop URLs using the Playwright-based URL resolvers.
+Only shops with an empty URL are processed — manual URLs are never overwritten.
+
+Retry schedule (applied after each failed resolution attempt):
+  attempt 1 fails → retry in 5 min
+  attempt 2 fails → retry in 15 min
+  attempt 3 fails → retry in 30 min
+  attempt 4 fails → retry in 60 min
+  attempt 5 fails → retry in 180 min (3 h)
+  attempt 6 fails → retry in 360 min (6 h)
+  attempt 7 fails → exhausted, user notified via ⚠ in the GUI
+
+That ladder applies only to SEARCH_FAILED — a technical failure that says
+nothing about the product. When a resolver reports NOT_FOUND or ONLY_USED the
+shop has answered, and re-running the identical search six more times can only
+produce the identical answer, so the row is marked exhausted straight away.
+See services/url_resolvers/resolution.py for the distinction. The "Update URLs"
+button still re-runs those rows: it only skips rows that already hold a URL.
+"""
+
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+
+from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
+
+from application.database.db import SessionLocal
+from application.database.models import Product, ProductShop
+
+from application.services.url_search_service import get_search_url
+from application.services.url_resolvers.resolution import (
+    ResolutionResult,
+    ResolutionStatus,
+    TERMINAL_STATUSES,
+    normalize,
+    search_failed,
+)
+
+from application.services.url_resolvers.amazon_url_resolver import resolve_amazon_product_url
+from application.services.url_resolvers.game_url_resolver import resolve_game_product_url
+from application.services.url_resolvers.mediamarkt_url_resolver import resolve_mediamarkt_product_url
+from application.services.url_resolvers.pccomponentes_url_resolver import resolve_pccomponentes_product_url
+from application.services.url_resolvers.todoconsolas_url_resolver import resolve_todoconsolas_product_url
+from application.services.url_resolvers.wakkap_url_resolver import resolve_wakkap_product_url
+from application.services.url_resolvers.xtralife_url_resolver import resolve_xtralife_product_url
+
+
+# Map shop name (lower) → resolver function
+# Carrefour and Fnac are excluded (bot-detected)
+RESOLVERS = {
+    "amazon":        resolve_amazon_product_url,
+    "game":          resolve_game_product_url,
+    "mediamarkt":    resolve_mediamarkt_product_url,
+    "pccomponentes": resolve_pccomponentes_product_url,
+    "todoconsolas":  resolve_todoconsolas_product_url,
+    "wakkap":        resolve_wakkap_product_url,
+    "xtralife":      resolve_xtralife_product_url,
+}
+
+# Minutes to wait before each successive retry attempt
+RETRY_INTERVALS_MINUTES = [5, 15, 30, 60, 180, 360]
+MAX_RETRIES = len(RETRY_INTERVALS_MINUTES)  # 5 retries → 6 total attempts
+
+
+# Shop rows currently being resolved, as (product_id, shop_key) pairs.
+#
+# Several resolver workers can be in flight at once — saving a product starts
+# one for it while the "Update URLs" button starts another for every product in
+# the table, and the retry timer adds a third. Each opens its own session, so
+# they all read the same still-empty URL and scrape the same shop in parallel:
+# the product ends up resolved two or three times over, one full browser run
+# each. Claiming a row here makes the later workers skip it instead.
+_inflight_lock = threading.Lock()
+_inflight: set[tuple[int, str]] = set()
+
+
+# ─────────────────────────────────────────────
+# Internal helpers
+# ─────────────────────────────────────────────
+
+@contextmanager
+def _claim(product_id: int, shop_key: str):
+    """Reserve one (product, shop) for this thread; yields False if already taken."""
+    key = (product_id, shop_key)
+
+    with _inflight_lock:
+        if key in _inflight:
+            yield False
+            return
+        _inflight.add(key)
+
+    try:
+        yield True
+    finally:
+        with _inflight_lock:
+            _inflight.discard(key)
+
+
+def _mark_terminal(record: ProductShop, status: ResolutionStatus) -> None:
+    """Stop the retry timer re-asking a question the shop has already answered."""
+    record.retry_count = MAX_RETRIES + 1  # same sentinel the ladder ends on
+    record.next_retry_at = None
+    print(f"[Resolver] {record.shop}: {status.value} — no retry scheduled")
+
+
+def _schedule_retry(record: ProductShop) -> None:
+    """After a failed resolution, schedule the next retry or mark as exhausted."""
+    current = record.retry_count or 0
+    if current < MAX_RETRIES:
+        delay = RETRY_INTERVALS_MINUTES[current]
+        record.retry_count = current + 1
+        record.next_retry_at = datetime.utcnow() + timedelta(minutes=delay)
+        print(f"[Resolver] {record.shop}: retry {current + 1}/{MAX_RETRIES} in {delay} min")
+    else:
+        record.retry_count = MAX_RETRIES + 1  # sentinel: all retries exhausted
+        record.next_retry_at = None
+        print(f"[Resolver] {record.shop}: all retries exhausted")
+
+
+# ─────────────────────────────────────────────
+# First-time resolution (called when product is added)
+# ─────────────────────────────────────────────
+
+def resolve_urls_for_product(
+    product_id: int,
+    on_progress=None,
+) -> dict[str, ResolutionResult]:
+    """
+    Resolve missing URLs for all ProductShop rows of a given product.
+    Shops that already have a URL (manual entry) are skipped.
+    Shops whose resolution fails are scheduled for automatic retry.
+
+    on_progress(product_id, shop_name, resolved_url_or_None) is called after
+    each shop is processed so callers can update the UI incrementally.
+    """
+    db = SessionLocal()
+
+    product = db.query(Product).options(
+        joinedload(Product.platforms)
+    ).filter(Product.id == product_id).first()
+
+    if not product:
+        db.close()
+        print(f"[Resolver] Product {product_id} not found.")
+        return {}
+
+    platform_names = [p.name for p in product.platforms] if product.platforms else [None]
+    platform = platform_names[0] if platform_names else None
+
+    shop_records = db.query(ProductShop).filter(
+        ProductShop.product_id == product_id
+    ).all()
+
+    results: dict[str, ResolutionResult] = {}
+
+    for record in shop_records:
+        shop_key = record.shop.strip().lower()
+
+        # Skip if a URL is already set (manual URL — never overwrite)
+        if record.url and record.url.strip():
+            print(f"[Resolver] {record.shop}: already has URL, skipping.")
+            continue
+
+        resolver = RESOLVERS.get(shop_key)
+        if resolver is None:
+            print(f"[Resolver] {record.shop}: no resolver available, skipping.")
+            results[record.shop] = search_failed()
+            continue
+
+        search_url = get_search_url(shop_key, product.name, platform)
+        if not search_url:
+            print(f"[Resolver] {record.shop}: could not build search URL, skipping.")
+            results[record.shop] = search_failed()
+            continue
+
+        with _claim(product_id, shop_key) as claimed:
+            if not claimed:
+                print(f"[Resolver] {record.shop}: already being resolved, skipping.")
+                continue
+
+            # Another worker may have finished this row between the query above
+            # and the claim, so re-read it before spending a browser run.
+            db.refresh(record)
+            if record.url and record.url.strip():
+                print(f"[Resolver] {record.shop}: resolved by another worker, skipping.")
+                continue
+
+            print(f"[Resolver] {record.shop}: resolving '{product.name}' ({platform})...")
+            try:
+                outcome = normalize(resolver(search_url, platform))
+            except Exception as e:
+                # A crash tells us nothing about the product, so it retries.
+                print(f"[Resolver] {record.shop}: resolver error — {e}")
+                outcome = search_failed()
+
+            resolved_url = outcome.url
+
+            if resolved_url:
+                record.url = resolved_url
+                record.retry_count = 0
+                record.next_retry_at = None
+                print(f"[Resolver] {record.shop}: ✓ {resolved_url}")
+            elif outcome.status in TERMINAL_STATUSES:
+                _mark_terminal(record, outcome.status)
+            else:
+                print(f"[Resolver] {record.shop}: ✗ could not resolve URL")
+                _schedule_retry(record)
+
+            # Publish the result before releasing the claim, so a worker waiting
+            # on this shop sees the committed URL rather than an empty row.
+            db.commit()
+
+        results[record.shop] = outcome
+
+        if on_progress:
+            on_progress(product_id, record.shop, resolved_url)
+
+    db.commit()
+    db.close()
+    return results
+
+
+def resolve_urls_for_products(
+    product_ids: list[int],
+    on_progress=None,
+) -> dict[int, dict[str, ResolutionResult]]:
+    """Resolve URLs for multiple products. Returns {product_id: {shop: result}}."""
+    all_results = {}
+    for pid in product_ids:
+        all_results[pid] = resolve_urls_for_product(pid, on_progress=on_progress)
+    return all_results
+
+
+# ─────────────────────────────────────────────
+# Scheduled retry (called periodically by the GUI timer)
+# ─────────────────────────────────────────────
+
+def retry_due_shops(on_progress=None) -> dict[int, dict[str, ResolutionResult]]:
+    """
+    Find all ProductShop rows whose retry is due and attempt resolution.
+    Called periodically by the GUI timer.
+    Returns {product_id: {shop_name: ResolutionResult}}.
+
+    Rows the shop has already answered NOT_FOUND / ONLY_USED carry the
+    exhausted sentinel, so the retry_count filter below skips them.
+    """
+    db = SessionLocal()
+    now = datetime.utcnow()
+
+    pending_ids = [
+        r.id for r in db.query(ProductShop).filter(
+            or_(ProductShop.url == None, ProductShop.url == ""),
+            ProductShop.retry_count > 0,
+            ProductShop.retry_count <= MAX_RETRIES,
+            ProductShop.next_retry_at.isnot(None),
+            ProductShop.next_retry_at <= now,
+        ).all()
+    ]
+    db.close()
+
+    if not pending_ids:
+        return {}
+
+    all_results: dict[int, dict[str, ResolutionResult]] = {}
+    for shop_id in pending_ids:
+        result = _retry_single_shop(shop_id, on_progress)
+        if result:
+            product_id, shop_name, outcome = result
+            all_results.setdefault(product_id, {})[shop_name] = outcome
+
+    return all_results
+
+
+def _retry_single_shop(shop_record_id: int, on_progress=None):
+    """Attempt one retry for a single ProductShop row.
+
+    Returns (product_id, shop, ResolutionResult) or None.
+    """
+    db = SessionLocal()
+
+    record = db.query(ProductShop).filter(ProductShop.id == shop_record_id).first()
+    if not record:
+        db.close()
+        return None
+
+    product = db.query(Product).options(
+        joinedload(Product.platforms)
+    ).filter(Product.id == record.product_id).first()
+    if not product:
+        db.close()
+        return None
+
+    platform = product.platforms[0].name if product.platforms else None
+    shop_key = record.shop.strip().lower()
+
+    resolver = RESOLVERS.get(shop_key)
+    if resolver is None:
+        record.retry_count = MAX_RETRIES + 1
+        record.next_retry_at = None
+        db.commit()
+        db.close()
+        return (product.id, record.shop, search_failed())
+
+    search_url = get_search_url(shop_key, product.name, platform)
+    if not search_url:
+        db.commit()
+        db.close()
+        return (product.id, record.shop, search_failed())
+
+    # The retry timer fires on its own schedule, so it can land on a row a
+    # resolver worker is already busy with.
+    with _claim(product.id, shop_key) as claimed:
+        if not claimed:
+            print(f"[Retry] {record.shop}: already being resolved, skipping.")
+            db.close()
+            return None
+
+        db.refresh(record)
+        if record.url and record.url.strip():
+            print(f"[Retry] {record.shop}: resolved by another worker, skipping.")
+            db.close()
+            return None
+
+        print(f"[Retry] {record.shop} for '{product.name}' (attempt {record.retry_count + 1})...")
+        try:
+            outcome = normalize(resolver(search_url, platform))
+        except Exception as e:
+            print(f"[Retry] {record.shop}: error — {e}")
+            outcome = search_failed()
+
+        resolved_url = outcome.url
+
+        if resolved_url:
+            record.url = resolved_url
+            record.retry_count = 0
+            record.next_retry_at = None
+            print(f"[Retry] {record.shop}: ✓ {resolved_url}")
+        elif outcome.status in TERMINAL_STATUSES:
+            # A retry can still land on a definitive answer — e.g. a stale
+            # selector that used to fail now reads the grid and finds the shop
+            # genuinely does not stock the product. Stop the ladder there.
+            _mark_terminal(record, outcome.status)
+        else:
+            print(f"[Retry] {record.shop}: ✗ still not resolved")
+            _schedule_retry(record)
+
+        db.commit()
+
+    product_id = product.id
+    shop_name = record.shop
+    db.commit()
+    db.close()
+
+    if on_progress:
+        on_progress(product_id, shop_name, resolved_url)
+
+    return (product_id, shop_name, outcome)
