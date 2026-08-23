@@ -71,10 +71,28 @@ pyinstaller \
 # This is what lets a distributed copy work with no Python on the machine —
 # "playwright install chromium", which Playwright's error message tells the user
 # to run, is not a command they could execute.
-export PLAYWRIGHT_BROWSERS_PATH="$PWD/dist/price_bot_gui/browsers"
-echo "Downloading Chromium into the distribution (this is the slow part)..."
+# Downloaded into a cache OUTSIDE dist/ and copied in, not straight into the
+# distribution. PyInstaller's --noconfirm deletes dist/price_bot_gui wholesale
+# on every build, browsers/ included, so downloading there means re-fetching
+# 370 MB on every single rebuild. A local copy takes seconds instead.
+BROWSER_CACHE="$PWD/.browser-cache"
+export PLAYWRIGHT_BROWSERS_PATH="$BROWSER_CACHE"
+
+echo "Ensuring Chromium is in $BROWSER_CACHE ..."
+# ffmpeg comes along with the chromium install and is only used for video
+# recording, which nothing here does. It stays in the cache rather than being
+# deleted — deleting it just makes the next build download it again — and
+# simply never gets copied into the distribution below.
 python -m playwright install chromium --no-shell
-rm -rf "$PLAYWRIGHT_BROWSERS_PATH"/ffmpeg-*
+
+versions=$(find "$BROWSER_CACHE" -maxdepth 1 -name 'chromium-*' | wc -l)
+if [ "$versions" -gt 1 ]; then
+    echo "  Note: $versions Chromium versions cached. Delete .browser-cache/ to trim." >&2
+fi
+
+echo "Copying Chromium into the distribution..."
+mkdir -p dist/price_bot_gui/browsers
+cp -r "$BROWSER_CACHE"/chromium-* dist/price_bot_gui/browsers/
 
 echo ""
 echo "Build complete. Executable is in dist/price_bot_gui/"

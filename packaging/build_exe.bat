@@ -65,10 +65,27 @@ REM The full Chromium build, and --no-shell to skip the lightweight "headless
 REM shell": BrowserManager passes channel="chromium" because some shops render no
 REM price in the shell, so it would be 257 MB that never runs. ffmpeg comes along
 REM with the chromium install and is only used for video recording - dropped.
-set "PLAYWRIGHT_BROWSERS_PATH=%CD%\dist\price_bot_gui\browsers"
-echo Downloading Chromium into the distribution (this is the slow part)...
+REM Downloaded into a cache OUTSIDE dist\ and copied in, not straight into the
+REM distribution. PyInstaller's --noconfirm deletes dist\price_bot_gui wholesale
+REM on every build, browsers\ included, so downloading there means re-fetching
+REM 370 MB on every single rebuild. A local copy takes seconds instead.
+set "BROWSER_CACHE=%CD%\.browser-cache"
+set "PLAYWRIGHT_BROWSERS_PATH=%BROWSER_CACHE%"
+
+echo Ensuring Chromium is in %BROWSER_CACHE% ...
+REM ffmpeg comes along with the chromium install and is only used for video
+REM recording, which nothing here does. It stays in the cache rather than being
+REM deleted - deleting it just makes the next build download it again - and the
+REM robocopy below excludes it from the distribution.
 python -m playwright install chromium --no-shell
-for /d %%D in ("%PLAYWRIGHT_BROWSERS_PATH%\ffmpeg-*") do rd /s /q "%%D"
+
+echo Copying Chromium into the distribution...
+mkdir "dist\price_bot_gui\browsers" 2>nul
+robocopy "%BROWSER_CACHE%" "dist\price_bot_gui\browsers" /E /XD ffmpeg-* >nul
+if %errorlevel% geq 8 (
+    echo ERROR: could not copy the browsers into the distribution >&2
+    exit /b 1
+)
 
 echo.
 echo Build complete. Executable is in dist\price_bot_gui\

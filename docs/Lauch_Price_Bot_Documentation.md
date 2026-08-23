@@ -304,6 +304,56 @@ nothing imports them, and `fnac.py` is on the shop dropdown's exclusion list eit
 
 ---
 
+## Rebuilding after a change
+
+### The commands
+
+**Linux** — locally, about 25 seconds:
+
+```bash
+./packaging/build_exe.sh
+./packaging/make_release.sh linux
+```
+
+**Windows** — not possible from Linux. PyInstaller does not cross-compile, so either build on
+a Windows machine with the repo and a `venv/`, or push and let the Actions workflow do it.
+
+Chromium is cached in `.browser-cache/` (gitignored) between builds and copied into the
+distribution, rather than downloaded into it. PyInstaller's `--noconfirm` deletes
+`dist/price_bot_gui` wholesale on every build, `browsers/` included, so downloading there
+re-fetched 370 MB every single time.
+
+> If `make_release.sh` refuses with *"Refusing to package"*, you ran the executable after
+> building and it created a `tracker.db` next to itself. Delete it and re-run — that guard is
+> the only thing standing between a test database and a public release.
+
+### Five things that only break in the packaged build
+
+These all work fine from a source checkout and fail only after packaging, which makes them
+expensive to find late:
+
+| If your change... | ...then | Otherwise |
+| --- | --- | --- |
+| adds a Python dependency | add it to `requirements.txt` | the CI build fails: the runner installs only from that file |
+| adds a `Setting` or other DB column | add the `ALTER TABLE` to `init_db.py` | existing users' databases have no such column and queries fail |
+| launches a browser | pass `channel="chromium"` | the distribution ships no headless shell, so it dies on a missing executable |
+| adds a user-facing string | add the key to **both** `en.json` and `es.json` | the UI shows the raw key, e.g. `settings.label_foo` |
+| reads a file at runtime from outside `application/` | add an explicit `--add-data` to both build scripts | the file is not in the bundle and the read fails |
+
+Anything under `application/` is already carried: the build stages the whole tree as data
+(minus `*.db`), which is what keeps the shop dropdown and the language catalogs working.
+
+### Checking a build before handing it out
+
+```bash
+cd dist/price_bot_gui && ./price_bot_gui
+```
+
+`logs/price_bot_gui.log` should contain `Using bundled browsers:` — if it does not, the
+distribution has no Chromium and every scrape will fail on the recipient's machine.
+
+---
+
 ## Requirements
 
 - Python 3.11+ with a virtual environment at `venv/`

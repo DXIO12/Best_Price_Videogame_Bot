@@ -82,3 +82,6 @@ project_tests/
 dist/
 build/
 *.spec
+
+# Chromium kept between builds so a rebuild is a copy, not a 370 MB download.
+.browser-cache/
