@@ -157,7 +157,12 @@ def mark_unavailable(db, shop_record: ProductShop):
 # =========================================================
 
 def send_notification(product_name: str, shop: str, current_price: float,
-                      target_price: float, url: str):
+                      target_price: float, url: str) -> bool:
+    """Send the price alert. Returns whether it actually went out.
+
+    The return value is what the caller writes into ``last_notified``: a send
+    that failed must not start the repeat-notification cooldown, or a Telegram
+    outage silently swallows the alert for the whole cooldown window."""
     # The alert is the one piece of bot output a person reads, so it follows the
     # selected language. Console logs below stay English on purpose.
     message = tr(
@@ -171,7 +176,7 @@ def send_notification(product_name: str, shop: str, current_price: float,
     # Credentials come from the Settings dialog first, then the environment —
     # a packaged build has no .env to read. See notifier.get_telegram_credentials.
     token, chat_id = get_telegram_credentials()
-    send_telegram_message(token, chat_id, message)
+    return send_telegram_message(token, chat_id, message)
 
 
 # =========================================================
@@ -308,9 +313,12 @@ def _check_best_price(db, product_name: str, target_price: float,
 
     if should_notify(best_record, best_price, settings):
         log.info(f"  BEST PRICE: {best_price}€ at {best_record.shop}")
-        send_notification(product_name, best_record.shop,
-                          best_price, target_price, best_record.url)
-        save_shop_record(db, best_record, best_price, notified=True)
+        notified = send_notification(product_name, best_record.shop,
+                                     best_price, target_price, best_record.url)
+        if not notified:
+            log.warning(f"  Alert for {product_name} was not delivered — "
+                        f"it will be retried on the next pass.")
+        save_shop_record(db, best_record, best_price, notified=notified)
     else:
         log.debug(f"  Best price {best_price}€ already notified recently.")
 
@@ -340,9 +348,11 @@ def _check_all_shops(db, product_name: str, target_price: float,
         if price <= target_price:
             if should_notify(record, price, settings):
                 log.info(f"  ALERT: {record.shop} → {price}€")
-                send_notification(product_name, record.shop,
-                                  price, target_price, record.url)
-                notified = True
+                notified = send_notification(product_name, record.shop,
+                                             price, target_price, record.url)
+                if not notified:
+                    log.warning(f"  Alert for {product_name} at {record.shop} was "
+                                f"not delivered — it will be retried on the next pass.")
             else:
                 log.debug(f"  {record.shop}: {price}€ — already notified recently.")
         else:
