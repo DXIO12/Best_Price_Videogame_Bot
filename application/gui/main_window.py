@@ -7,6 +7,7 @@ from application.gui.add_product_dialog import AddProductDialog, get_available_s
 from application.gui.delete_product_dialog import DeleteProductDialog
 from application.gui.modify_product_dialog import ModifyProductDialog
 from application.gui.settings_bot import SettingsBotDialog
+from application.gui.priority_table import PriorityTableWidget
 from application.language_selector import init_language, tr
 from application.services.product_service import (
     get_products_with_shops,
@@ -45,55 +46,6 @@ from application.services.resolve_urls_service import MAX_RETRIES
 from application.services.url_resolvers.resolution import ResolutionStatus
 
 log = get_logger("gui")
-
-
-class PriorityTableWidget(QTableWidget):
-    """QTableWidget whose drop handling is fully overridden.
-
-    Qt's built-in InternalMove drag-and-drop only relocates the
-    QTableWidgetItems, not cell widgets (we use a QLabel for the Shops
-    column), which desyncs rows after a drag. Instead we just figure out
-    source/target row and let the owner rebuild the whole table from the
-    database, which keeps items and cell widgets consistent.
-    """
-
-    rowDropped = pyqtSignal(int, int)  # source_row, target_row
-
-    def dropEvent(self, event):
-        source_row = self.currentRow()
-        pos = event.position().toPoint()
-        index = self.indexAt(pos)
-
-        # Threshold is 15% of the row's height into the hovered row.
-        # Dragging downward: crossing just the top 15% of a lower row is
-        # enough to register "insert below it". Dragging upward: crossing
-        # just the bottom 15% of a higher row is enough for "insert above
-        # it". This needs noticeably less mouse travel than a full half-row
-        # crossing, so a one-row move triggers sooner and feels snappier.
-        if index.isValid():
-            row_rect = self.visualRect(index)
-            hovered_row = index.row()
-            if hovered_row > source_row:
-                threshold_y = row_rect.top() + row_rect.height() * 0.15
-            elif hovered_row < source_row:
-                threshold_y = row_rect.top() + row_rect.height() * 0.85
-            else:
-                threshold_y = row_rect.center().y()
-            target_row = hovered_row if pos.y() < threshold_y else hovered_row + 1
-        else:
-            target_row = self.rowCount()
-
-        # Tell Qt the drop was a no-op (IgnoreAction) rather than a Move.
-        # If we let it resolve as a Move, QAbstractItemView's own internals
-        # delete the dragged row *after* this method returns — on top of
-        # whatever we already did — which silently drops a row from the
-        # table. We handle the reorder entirely ourselves, so Qt must not
-        # touch the model at all.
-        event.setDropAction(Qt.DropAction.IgnoreAction)
-        event.accept()
-
-        if source_row != -1 and target_row != source_row and target_row != source_row + 1:
-            self.rowDropped.emit(source_row, target_row)
 
 
 class MainWindow(QWidget):
@@ -193,9 +145,21 @@ class MainWindow(QWidget):
         self.settings_bot_button.setToolTip(tr("main.tooltip_settings"))
         self.settings_bot_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
+        # Shortcut to Settings → Data, left of the gear and built the same way.
+        # One button, not two: importing replaces products, and a destructive
+        # action does not belong one click away in the window chrome — the
+        # confirmation for it lives inside the import dialog.
+        self.data_bot_button = QToolButton()
+        self.data_bot_button.setIcon(icons.data_icon())
+        self.data_bot_button.setIconSize(QSize(22, 22))
+        self.data_bot_button.setAutoRaise(True)
+        self.data_bot_button.setToolTip(tr("main.tooltip_data"))
+        self.data_bot_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
         title_layout = QHBoxLayout()
         title_layout.addWidget(self.title_label)
         title_layout.addStretch()
+        title_layout.addWidget(self.data_bot_button)
         title_layout.addWidget(self.settings_bot_button)
 
         main_layout.addLayout(title_layout)
@@ -243,7 +207,14 @@ class MainWindow(QWidget):
         self.modify_product_button.clicked.connect(
             lambda: self.open_modify_product_dialog()
         )
-        self.settings_bot_button.clicked.connect(self.open_settings_bot_dialog)
+        # Explicit lambdas: clicked() emits a `checked` bool that would
+        # otherwise land in open_on_data.
+        self.settings_bot_button.clicked.connect(
+            lambda: self.open_settings_bot_dialog()
+        )
+        self.data_bot_button.clicked.connect(
+            lambda: self.open_settings_bot_dialog(open_on_data=True)
+        )
         self.start_bot_button.clicked.connect(self.start_bot_worker)
         self.pause_bot_button.clicked.connect(self.pause_bot_worker)
         self.stop_bot_button.clicked.connect(self.stop_bot_worker)
@@ -366,6 +337,7 @@ class MainWindow(QWidget):
         they are opened, so they pick up the new language on their own."""
         self.setWindowTitle(tr("main.window_title"))
         self.title_label.setText(tr("main.heading"))
+        self.data_bot_button.setToolTip(tr("main.tooltip_data"))
         self.settings_bot_button.setToolTip(tr("main.tooltip_settings"))
 
         self.add_product_button.setText(tr("main.btn_add_product"))
@@ -1037,11 +1009,19 @@ class MainWindow(QWidget):
     # OPEN SETTINGS BOT DIALOG
     # =========================================
 
-    def open_settings_bot_dialog(self):
-        dialog = SettingsBotDialog(parent=self)
+    def open_settings_bot_dialog(self, open_on_data: bool = False):
+        dialog = SettingsBotDialog(
+            parent=self,
+            open_on_data=open_on_data,
+            # The Data tab refuses to import or rename while a pass is in
+            # flight; only this window knows whether one is.
+            bot_active=self.bot_running or self.bot_worker_active,
+        )
         # Saving may have changed the language: relabel this window in place.
         # The dialogs need no such hook — each is rebuilt on its next open.
         dialog.settings_saved.connect(self._retranslate_ui)
+        # An import rewrites the product list underneath the table.
+        dialog.products_changed.connect(self.load_products)
         dialog.exec()
 
     # =========================================

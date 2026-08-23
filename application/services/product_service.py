@@ -199,6 +199,19 @@ def delete_products(product_ids):
         ProductShop.product_id.in_(product_ids)
     ).delete(synchronize_session=False)
 
+    # THEN THE PRIORITY ROWS. A bulk query.delete() runs as a single SQL
+    # statement and never loads the objects, so the many-to-many cascade that
+    # db.delete(product) would trigger (see delete_product_platforms) does not
+    # happen here — without this the association rows outlive their product.
+    # They stay invisible in the table, which iterates products, but
+    # get_platform_priorities() still returns them, so every later reorder
+    # numbers around rows that no longer exist.
+    db.execute(
+        product_platforms.delete().where(
+            product_platforms.c.product_id.in_(product_ids)
+        )
+    )
+
     # DELETE PRODUCTS
     db.query(Product).filter(
         Product.id.in_(product_ids)

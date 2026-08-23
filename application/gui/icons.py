@@ -93,6 +93,15 @@ _SYNC_SVG = (
 )
 
 
+# Up + down arrows (Material "import_export"), for the header button that opens
+# Settings on the Data tab. Grey: it opens a panel, it destroys nothing by
+# itself — the destructive half of importing is guarded by its own dialog.
+_DATA_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    b'<path fill="#9e9e9e" d="M9 3L5 6.99h3V14h2V6.99h3L9 3zm7 14.01V10h-2v7.01h-3'
+    b'L15 21l4-3.99h-3z"/></svg>'
+)
+
 # =========================================================
 # RENDERING
 # =========================================================
@@ -156,3 +165,8 @@ def restart_icon() -> QIcon:
 def sync_icon() -> QIcon:
     """Grey double arrow — resolve missing shop URLs, in the Shops column."""
     return render_svg_icon(_SYNC_SVG)
+
+
+def data_icon() -> QIcon:
+    """Grey up/down arrows — opens Settings on the Data tab."""
+    return render_svg_icon(_DATA_SVG)
