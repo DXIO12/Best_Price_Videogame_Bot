@@ -24,6 +24,7 @@ with engine.connect() as conn:
         "ALTER TABLE settings ADD COLUMN language TEXT",
         "ALTER TABLE settings ADD COLUMN telegram_bot_token TEXT",
         "ALTER TABLE settings ADD COLUMN telegram_chat_id TEXT",
+        "ALTER TABLE settings ADD COLUMN notification_channels TEXT",
         "ALTER TABLE product_platforms ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     ]:
         try:

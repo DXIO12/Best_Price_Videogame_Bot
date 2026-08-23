@@ -40,13 +40,32 @@ def get_channel(key: str):
     return None
 
 
+def default_keys() -> list[str]:
+    """What an installation that predates the Notifications tab gets.
+
+    Telegram, but **only if it is already configured**. Returning it
+    unconditionally would tick a channel nobody set up, and the dialog would
+    then refuse to save until it was either filled in or turned off — a fresh
+    install being nagged about a bot token it never asked for.
+    """
+    return [
+        channel.KEY for channel in _CHANNELS
+        if channel.KEY in DEFAULT_CHANNELS
+        and channel.is_available()
+        and channel.is_configured(channel.load_credentials())
+    ]
+
+
 def enabled_keys() -> list[str]:
     """Channel keys the user has switched on, from ``Setting``.
 
-    ``getattr`` rather than a plain attribute: the ``notification_channels``
-    column arrives with the Notifications tab, and until then — and on a
-    database that predates it — this has to resolve to the default instead of
-    raising in the middle of a scraping pass.
+    ``None`` and ``""`` are different answers: never configured falls back to
+    :func:`default_keys`, while an empty string is the user having turned every
+    channel off, and that has to be obeyed rather than helpfully undone.
+
+    ``getattr`` rather than a plain attribute: on a database written before the
+    column existed this has to resolve to the default instead of raising in the
+    middle of a scraping pass.
     """
     try:
         from application.database.db import SessionLocal
@@ -61,8 +80,8 @@ def enabled_keys() -> list[str]:
     except Exception:
         raw = None
 
-    if not raw:
-        return list(DEFAULT_CHANNELS)
+    if raw is None:
+        return default_keys()
 
     keys = [part.strip() for part in raw.split(",") if part.strip()]
     return [key for key in keys if get_channel(key) is not None]
@@ -78,7 +97,7 @@ def send_to_enabled(alert: Alert) -> bool:
     """
     keys = enabled_keys()
     if not keys:
-        log.error("No notification channel is enabled — alert not sent.")
+        log.warning("No notification channel is enabled — alert not sent.")
         return False
 
     delivered = False
@@ -112,6 +131,7 @@ __all__ = [
     "Alert",
     "DEFAULT_CHANNELS",
     "available_channels",
+    "default_keys",
     "enabled_keys",
     "get_channel",
     "send_to_enabled",

@@ -11,8 +11,24 @@ Each channel module exposes:
     SECRET_FIELDS       tuple[str]   subset of the above shown masked
     is_available()      -> bool      can this machine use the channel at all
     load_credentials()  -> dict      whatever ``send`` needs, from the DB / env
+    load_stored(s)      -> dict      the same, from that Setting row only
+    store(s, values)    -> None      write them back onto a Setting row
     is_configured(c)    -> bool      are those credentials complete
     send(c, alert)      -> bool      True only if it actually went out
+
+A channel with nothing to configure leaves ``CREDENTIAL_FIELDS`` empty and
+``load_stored`` / ``store`` as no-ops; the Settings dialog then draws it as a
+checkbox with no fields under it.
+
+``load_stored`` exists next to ``load_credentials`` because the Settings dialog
+must show only what it can also save. A value that really comes from a ``.env``
+would appear editable, and the first Save would copy it into the database.
+
+The i18n keys a channel needs follow from its KEY, so adding one does not touch
+the dialog: ``settings.channel_<KEY>``, ``settings.tooltip_channel_<KEY>``,
+``settings.label_<KEY>_<field>``, ``settings.placeholder_<KEY>_<field>``,
+``settings.tooltip_<KEY>_<field>``, ``settings.btn_test_<KEY>`` and
+``settings.<KEY>_test_{message,missing,sending,ok,failed}``.
 
 ``send`` returning a bool is load-bearing: the caller writes it into
 ``ProductShop.last_notified``, and a failed send that reports success starts the

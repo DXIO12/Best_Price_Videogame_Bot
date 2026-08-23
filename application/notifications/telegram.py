@@ -7,6 +7,7 @@ resolution order, same message text, same token redaction.
 import os
 
 import requests
+from dotenv import load_dotenv
 
 from application.config.logger import get_logger
 from application.language_selector import tr
@@ -20,6 +21,14 @@ KEY = "telegram"
 CREDENTIAL_FIELDS = ("bot_token", "chat_id")
 
 SECRET_FIELDS = ("bot_token",)
+
+# Where each credential lives on the ``Setting`` row. Spelled out rather than
+# derived from KEY + field name: the channel owns its own columns, so the
+# Settings dialog never has to know one.
+SETTING_COLUMNS = {
+    "bot_token": "telegram_bot_token",
+    "chat_id": "telegram_chat_id",
+}
 
 
 def is_available() -> bool:
@@ -59,6 +68,14 @@ def load_credentials() -> dict:
         # The table may not exist yet on a very first run. Fall through.
         pass
 
+    # Load the .env here rather than trusting the process to have done it.
+    # ``bot.py`` calls load_dotenv() at import, the GUI never did — so the same
+    # installation looked configured to the headless bot and unconfigured to
+    # the Settings dialog, which is exactly the sort of disagreement the
+    # Notifications tab must not show. Idempotent, and it does not override
+    # variables already exported.
+    load_dotenv()
+
     return {
         "bot_token": (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip(),
         "chat_id": (os.getenv("TELEGRAM_CHAT_ID") or "").strip(),
@@ -67,6 +84,27 @@ def load_credentials() -> dict:
 
 def is_configured(credentials: dict) -> bool:
     return bool(credentials.get("bot_token")) and bool(credentials.get("chat_id"))
+
+
+def load_stored(setting) -> dict:
+    """Credentials as stored on this ``Setting`` row — no environment fallback.
+
+    Separate from ``load_credentials()`` on purpose: this is what the Settings
+    dialog puts in its fields, and showing a value the dialog cannot save (one
+    that really lives in a ``.env``) would be a lie the first Save makes true.
+    """
+    return {
+        field: (getattr(setting, column, None) or "") if setting else ""
+        for field, column in SETTING_COLUMNS.items()
+    }
+
+
+def store(setting, values: dict) -> None:
+    """Write the credentials back onto a ``Setting`` row. Empty means NULL, so
+    clearing a field falls back to the environment again rather than saving an
+    empty string that would shadow it."""
+    for field, column in SETTING_COLUMNS.items():
+        setattr(setting, column, (values.get(field) or "").strip() or None)
 
 
 def render(alert: Alert) -> str:
@@ -90,6 +128,17 @@ def send(credentials: dict, alert: Alert) -> bool:
         credentials.get("bot_token"),
         credentials.get("chat_id"),
         render(alert),
+    )
+
+
+def send_test(credentials: dict) -> bool:
+    """Fire a test message with the credentials **typed** into the Settings
+    dialog rather than the stored ones. Confirming a masked token before
+    accepting it is the whole point, so this must not read the database."""
+    return send_message(
+        credentials.get("bot_token"),
+        credentials.get("chat_id"),
+        tr(f"settings.{KEY}_test_message"),
     )
 
 

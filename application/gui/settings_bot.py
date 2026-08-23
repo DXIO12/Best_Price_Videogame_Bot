@@ -32,7 +32,7 @@ from application.services.product_io import (
     rename_database,
     suggested_export_name,
 )
-from application.notifications.telegram import send_message as send_telegram_message
+from application.notifications import available_channels, enabled_keys
 from application.config.runtime_config import get_debug_mode, write_config_settings
 from application.language_selector import available_languages, get_language, set_language, tr
 
@@ -141,6 +141,9 @@ class SettingsBotDialog(QDialog):
         # configuration yet, so it opens on Bot, where that configuration lives.
         tabs = QTabWidget()
         tabs.addTab(self._build_app_tab(), tr("settings.tab_app"))
+        # Notifications between Application and Bot: it is about the app's
+        # wiring to the outside world, not about how a pass behaves.
+        tabs.addTab(self._build_notifications_tab(), tr("settings.tab_notifications"))
         bot_index = tabs.addTab(self._build_bot_tab(), tr("settings.tab_bot"))
         # Data last: it is the only tab holding actions rather than options,
         # and the only one reached by its own button in the header.
@@ -280,64 +283,171 @@ class SettingsBotDialog(QDialog):
             self._debug_chk,
         )
 
-        # Telegram credentials. These live here rather than only in a .env so a
-        # packaged build can be configured from inside the app — see the
-        # comment on Setting.telegram_bot_token.
-        self._token_edit = QLineEdit(s.telegram_bot_token if s and s.telegram_bot_token else "")
-        # Masked: a bot token is a bearer credential, and this dialog gets
-        # opened while screen-sharing. The Test button below is how you confirm
-        # it was pasted correctly, so nothing is lost by not showing it.
-        self._token_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._token_edit.setPlaceholderText(tr("settings.placeholder_telegram_token"))
+        return page
+
+    # =========================================
+    # NOTIFICATIONS TAB
+    # =========================================
+
+    def _build_notifications_tab(self) -> QWidget:
+        """Which channels carry an alert, and their credentials.
+
+        Built entirely from ``available_channels()``: a new module in
+        ``application/notifications/`` appears here on its own, with its label,
+        fields and tooltips resolved from its KEY. Nothing in this file names a
+        channel."""
+        page, form = self._make_form_page()
+        enabled = set(enabled_keys())
+        # key -> {"channel", "check", "fields", "group", "test_btn"}
+        self._channels = {}
+
+        picker = QWidget()
+        picker_layout = QVBoxLayout(picker)
+        picker_layout.setContentsMargins(0, 0, 0, 0)
+        picker_layout.setSpacing(4)
+
+        for channel in available_channels():
+            usable = channel.is_available()
+            label = tr(f"settings.channel_{channel.KEY}")
+            if not usable:
+                label = f"{label} — {tr('settings.channel_unavailable')}"
+
+            check = QCheckBox(label)
+            # Checkboxes, not a combo: Telegram on the phone *and* a toast on
+            # the machine you are sitting at is the normal case.
+            check.setChecked(usable and channel.KEY in enabled)
+            check.setEnabled(usable)
+            picker_layout.addWidget(check)
+
+            self._channels[channel.KEY] = {
+                "channel": channel,
+                "check": check,
+                "fields": {},
+                "group": None,
+                "test_btn": None,
+            }
+
         form.addRow(
-            self._label_widget("telegram_bot_token", tr("settings.label_telegram_token")),
-            self._token_edit,
+            self._label_widget("notification_channels",
+                               tr("settings.label_notification_channels")),
+            picker,
         )
 
-        self._chat_edit = QLineEdit(s.telegram_chat_id if s and s.telegram_chat_id else "")
-        self._chat_edit.setPlaceholderText(tr("settings.placeholder_telegram_chat_id"))
-        form.addRow(
-            self._label_widget("telegram_chat_id", tr("settings.label_telegram_chat_id")),
-            self._chat_edit,
-        )
-
-        self._test_btn = QPushButton(tr("settings.btn_test_telegram"))
-        self._test_btn.clicked.connect(self._on_test_telegram)
-        form.addRow("", self._test_btn)
+        for key, entry in self._channels.items():
+            group = self._build_channel_group(entry)
+            if group is None:
+                continue
+            entry["group"] = group
+            form.addRow(group)
+            # Only the channel you actually use takes up room. Same gesture as
+            # repeat_notification_minutes and max_parallel_workers, except the
+            # rows here are hidden rather than disabled: greyed-out credential
+            # fields read as "broken" instead of "not in use".
+            group.setVisible(entry["check"].isChecked())
+            entry["check"].toggled.connect(group.setVisible)
 
         return page
 
-    def _on_test_telegram(self):
-        """Send a real message with whatever is typed in the two fields.
+    def _build_channel_group(self, entry) -> QWidget | None:
+        """The credentials block for one channel, or None if it has nothing to
+        configure and nothing to test."""
+        channel = entry["channel"]
+        fields = getattr(channel, "CREDENTIAL_FIELDS", ())
+        can_test = hasattr(channel, "send_test")
+        if not fields and not can_test:
+            return None
 
-        Deliberately uses the field contents rather than what is stored: the
-        point is to check a token *before* saving it, and to give the person
-        setting this up the one thing a masked field cannot — proof that it
-        works."""
-        token = self._token_edit.text().strip()
-        chat_id = self._chat_edit.text().strip()
+        stored = channel.load_stored(self._existing) if fields else {}
+        secrets = getattr(channel, "SECRET_FIELDS", ())
 
-        if not token or not chat_id:
-            QMessageBox.warning(self, tr("settings.btn_test_telegram"),
-                                tr("settings.telegram_test_missing"))
+        group = QWidget()
+        box = QVBoxLayout(group)
+        box.setContentsMargins(0, 4, 0, 0)
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        box.addWidget(separator)
+
+        heading = QLabel(tr(f"settings.channel_{channel.KEY}"))
+        heading.setStyleSheet("QLabel { font-weight: bold; }")
+        box.addWidget(heading)
+
+        inner = QFormLayout()
+        inner.setHorizontalSpacing(16)
+        inner.setVerticalSpacing(12)
+        box.addLayout(inner)
+
+        for field in fields:
+            edit = QLineEdit(stored.get(field, ""))
+            if field in secrets:
+                # Masked: a token is a bearer credential and this dialog gets
+                # opened while screen-sharing. The Test button is what confirms
+                # it was pasted correctly, so nothing is lost by hiding it.
+                edit.setEchoMode(QLineEdit.EchoMode.Password)
+            edit.setPlaceholderText(tr(f"settings.placeholder_{channel.KEY}_{field}"))
+            inner.addRow(
+                self._label_widget(f"{channel.KEY}_{field}",
+                                   tr(f"settings.label_{channel.KEY}_{field}")),
+                edit,
+            )
+            entry["fields"][field] = edit
+
+        # Credentials can legitimately live in a .env instead of the database —
+        # that is how every developer checkout worked before this dialog
+        # existed. The fields stay empty in that case (load_stored deliberately
+        # does not show what it cannot save), so say why rather than letting it
+        # look unconfigured.
+        if fields and not channel.is_configured(stored) \
+                and channel.is_configured(channel.load_credentials()):
+            note = QLabel(tr("settings.channel_from_environment"))
+            note.setWordWrap(True)
+            note.setStyleSheet("QLabel { color: #9e9e9e; }")
+            inner.addRow("", note)
+
+        if can_test:
+            button = QPushButton(tr(f"settings.btn_test_{channel.KEY}"))
+            button.clicked.connect(lambda _, e=entry: self._on_test_channel(e))
+            inner.addRow("", button)
+            entry["test_btn"] = button
+
+        return group
+
+    def _channel_values(self, entry) -> dict:
+        return {field: edit.text().strip() for field, edit in entry["fields"].items()}
+
+    def _on_test_channel(self, entry):
+        """Exercise one channel for real, with whatever is typed right now.
+
+        Deliberately the field contents rather than what is stored: the point is
+        to check a credential *before* saving it, and to give the person setting
+        this up the one thing a masked field cannot — proof that it works."""
+        channel = entry["channel"]
+        values = self._channel_values(entry)
+        title = tr(f"settings.btn_test_{channel.KEY}")
+
+        if not channel.is_configured(values):
+            QMessageBox.warning(self, title, tr(f"settings.{channel.KEY}_test_missing"))
             return
 
-        self._test_btn.setEnabled(False)
-        self._test_btn.setText(tr("settings.telegram_test_sending"))
-        # Repaint before the blocking request, or the button never visibly changes.
-        self._test_btn.repaint()
+        button = entry["test_btn"]
+        button.setEnabled(False)
+        button.setText(tr(f"settings.{channel.KEY}_test_sending"))
+        # Repaint before the blocking call, or the button never visibly changes.
+        button.repaint()
         try:
-            ok = send_telegram_message(token, chat_id, tr("settings.telegram_test_message"))
+            ok = channel.send_test(values)
+        except Exception as error:  # noqa: BLE001 - a broken channel must still report
+            log.error(f"Test of notification channel '{channel.KEY}' raised: {error}")
+            ok = False
         finally:
-            self._test_btn.setEnabled(True)
-            self._test_btn.setText(tr("settings.btn_test_telegram"))
+            button.setEnabled(True)
+            button.setText(title)
 
         if ok:
-            QMessageBox.information(self, tr("settings.btn_test_telegram"),
-                                    tr("settings.telegram_test_ok"))
+            QMessageBox.information(self, title, tr(f"settings.{channel.KEY}_test_ok"))
         else:
-            QMessageBox.critical(self, tr("settings.btn_test_telegram"),
-                                 tr("settings.telegram_test_failed"))
+            QMessageBox.critical(self, title, tr(f"settings.{channel.KEY}_test_failed"))
 
     # =========================================
     # DATA TAB
@@ -553,6 +663,49 @@ class SettingsBotDialog(QDialog):
             tr("settings.rename_done", name=active_path().name),
         )
 
+    def _validated_channel_keys(self) -> list[str] | None:
+        """The enabled channel keys, or None when Save must not go through.
+
+        Two refusals, and the first is the one that matters: an enabled channel
+        with no credentials looks identical to a working one in this dialog, and
+        the difference only shows up as a price drop nobody was told about.
+
+        Turning everything off is allowed — someone may genuinely want the bot
+        to just fill the table — but it is confirmed, because it is also what an
+        accidental click looks like."""
+        keys = []
+        for key, entry in self._channels.items():
+            if not entry["check"].isChecked():
+                continue
+            channel = entry["channel"]
+            # The environment counts: refusing to save a channel that is
+            # working right now, because its token sits in a .env rather than in
+            # this dialog, would be the dialog calling a live setup broken.
+            configured = channel.is_configured(self._channel_values(entry)) \
+                or channel.is_configured(channel.load_credentials())
+            if entry["fields"] and not configured:
+                QMessageBox.warning(
+                    self,
+                    tr("settings.tab_notifications"),
+                    tr("settings.channel_not_configured",
+                       channel=tr(f"settings.channel_{key}")),
+                )
+                return None
+            keys.append(key)
+
+        if not keys:
+            answer = QMessageBox.question(
+                self,
+                tr("settings.tab_notifications"),
+                tr("settings.channels_none_confirm"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return None
+
+        return keys
+
     def _on_save(self):
         interval = self._interval_spin.value()
         notify_best = self._best_price_chk.isChecked()
@@ -562,8 +715,10 @@ class SettingsBotDialog(QDialog):
         workers = self._workers_spin.value()
         debug = self._debug_chk.isChecked()
         language = self._language_combo.currentData() or get_language()
-        telegram_token = self._token_edit.text().strip()
-        telegram_chat = self._chat_edit.text().strip()
+
+        channel_keys = self._validated_channel_keys()
+        if channel_keys is None:
+            return
 
         db = SessionLocal()
         setting = db.query(Setting).first()
@@ -579,8 +734,13 @@ class SettingsBotDialog(QDialog):
         setting.max_parallel_workers = workers
         setting.debug_mode = debug
         setting.language = language
-        setting.telegram_bot_token = telegram_token or None
-        setting.telegram_chat_id = telegram_chat or None
+        setting.notification_channels = ",".join(channel_keys)
+        # Credentials are written for every channel, enabled or not: turning a
+        # channel off is not a request to forget its token, and re-typing one
+        # after a weekend of silence is exactly the friction this avoids.
+        for entry in self._channels.values():
+            if entry["fields"]:
+                entry["channel"].store(setting, self._channel_values(entry))
 
         db.commit()
         db.close()
@@ -595,6 +755,9 @@ class SettingsBotDialog(QDialog):
             "max_parallel_workers": workers,
             "debug_mode": debug,
             "language": language,
+            # The list of channels is not a secret, unlike the credentials
+            # above it, so this one is mirrored. See Setting.telegram_bot_token.
+            "notification_channels": channel_keys,
         })
 
         # Applied before settings_saved fires, so whoever listens (the main
@@ -612,9 +775,8 @@ class SettingsBotDialog(QDialog):
             log.info(f"Parallel Workers:        {workers}")
         log.info(f"Debug Mode:              {debug}")
         log.info(f"Language:                {language}")
-        # The token is never logged, only whether one is present.
-        log.info(f"Telegram:                "
-                 f"{'configured' if telegram_token and telegram_chat else 'not configured'}")
+        # Credentials are never logged, only which channels carry an alert.
+        log.info(f"Notifications:           {', '.join(channel_keys) or 'none'}")
         log.rule()
 
         self.settings_saved.emit()

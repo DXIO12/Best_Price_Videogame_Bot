@@ -93,6 +93,20 @@ class Setting(Base):
     telegram_bot_token = Column(String)
     telegram_chat_id = Column(String)
 
+    # Which notification channels are switched on, as a CSV of channel keys
+    # ("telegram,desktop"). A CSV rather than a table: it is at most a handful
+    # of values from a closed set, on a table that only ever holds one row.
+    #
+    # Three states, and they are NOT the same thing:
+    #   None  = never configured → application.notifications falls back to
+    #           Telegram if credentials are already stored (the migration rule)
+    #   ""    = explicitly no channels: the user turned them all off
+    #   "..." = exactly these
+    #
+    # Unlike the credentials above, this one IS mirrored to config.json: a list
+    # of channel names is not a secret.
+    notification_channels = Column(String)
+
 
 class Product(Base):
 
