@@ -8,7 +8,8 @@
     "confirm": "Confirm",
     "all": "ALL",
     "none": "None",
-    "n_selected": "{count} selected"
+    "n_selected": "{count} selected",
+    "accept": "Accept"
   },
   "main": {
     "window_title": "Price Bot",
@@ -66,7 +67,8 @@
     "status_pausing_bot": "Pausing bot (holds after the current store)...",
     "status_bot_paused": "Bot paused.",
     "status_bot_paused_remaining": "Bot paused — {minutes} min left until the next check.",
-    "status_restarting_bot": "Restarting bot (dropping the paused check)..."
+    "status_restarting_bot": "Restarting bot (dropping the paused check)...",
+    "tooltip_data": "Import and export products"
   },
   "settings": {
     "window_title": "Settings",
@@ -102,7 +104,36 @@
     "telegram_test_ok": "Message sent. Check your Telegram — if it arrived, you are set up.",
     "telegram_test_failed": "Could not send. Check the token and chat ID, and that you have started a chat with your bot at least once.",
     "tooltip_telegram_bot_token": "The token BotFather gives you when you create a bot. Open Telegram, talk to @BotFather, send /newbot and follow the steps — the token is the long line it replies with. It is stored on this machine only, and never written to any file that is shared or committed.",
-    "tooltip_telegram_chat_id": "Which chat the alerts are sent to. Talk to @userinfobot in Telegram and it replies with your ID. For a group, add the bot to it and use the group's ID instead. Send a test message below to confirm it works."
+    "tooltip_telegram_chat_id": "Which chat the alerts are sent to. Talk to @userinfobot in Telegram and it replies with your ID. For a group, add the bot to it and use the group's ID instead. Send a test message below to confirm it works.",
+    "tab_data": "Data",
+    "label_export_products": "Export products:",
+    "btn_export_products": "Save to a JSON…",
+    "tooltip_export_products": "Saves your tracking list to a JSON file: which products, on which\nplatforms, in which order, and the URL held for each shop.\nIt does NOT export the Telegram token, the settings, or the prices already\nseen — only the list. Use it to move the list to another bot, or to keep a\ncopy before changing anything.",
+    "label_import_products": "Import products:",
+    "btn_import_products": "Load from a JSON…",
+    "tooltip_import_products": "Loads products from a file exported by another bot.\nBefore writing anything it asks what to do: merge (adds the missing ones and\nleaves yours alone) or replace (deletes your list and keeps only the file's).\nImporting is refused while the bot is running.",
+    "label_database_name": "Name:",
+    "btn_rename_database": "Rename…",
+    "tooltip_database_name": "File name of the database the app is using right now.\nRenaming moves the file on disk and stores the new name in config.json, so\nthe next start finds it again.\nRenaming is refused while the bot is running.",
+    "label_database_path": "Path:",
+    "label_product_count": "Products:",
+    "data_bot_active": "Stop the bot before importing or renaming the database.\nWhile a check is running, the database is in use.",
+    "export_dialog_title": "Export products",
+    "import_dialog_title": "Import products",
+    "json_filter": "JSON files (*.json)",
+    "export_failed": "The file could not be saved.\n\n{error}",
+    "export_done": "Exported {count} product(s) to:\n{path}",
+    "import_unreadable": "The file could not be read. Is it a JSON exported by Price Bot?\n\n{error}",
+    "import_failed": "The import failed part-way through. Check the product list.\n\n{error}",
+    "import_done": "Added {added} product(s).\nSkipped because already on your list: {skipped}.",
+    "import_done_replace": "Removed {removed} product(s) and added {added}.",
+    "import_unknown_platforms": "Platforms in the file that do not exist here and were skipped: {platforms}",
+    "rename_dialog_title": "Rename database",
+    "rename_dialog_label": "New file name:",
+    "rename_invalid": "That name will not do. Type a plain file name, with no folders or slashes.",
+    "rename_exists": "A file called “{name}” already exists in that folder.",
+    "rename_failed": "The file could not be renamed.\n\n{error}",
+    "rename_done": "The database is now called “{name}”."
   },
   "add_product": {
     "window_title": "Add Product",
@@ -181,5 +212,34 @@
   },
   "notify": {
     "price_alert": "PRICE ALERT!\n\nProduct: {product}\nShop: {shop}\nCurrent price: {price}€\nTarget price: {target}€\n\nURL:\n{url}"
+  },
+  "import_products": {
+    "window_title": "Import products",
+    "summary": "The file holds {total} product(s), {new} of which are not on your list.",
+    "mode_merge": "Merge with what I already have",
+    "mode_merge_hint": "Adds the missing ones. Leaves your {current} alone.",
+    "label_placement": "Priority for the new ones:",
+    "placement_end": "At the end of my list",
+    "placement_start": "At the top",
+    "placement_manual": "Sort by hand…",
+    "mode_replace": "Replace my list",
+    "mode_replace_hint": "Deletes your {current} products and keeps only the file's.",
+    "note_excluded": "The Telegram token and the prices already seen are not imported — only the tracking list.",
+    "btn_import": "Import",
+    "confirm_replace_title": "Replace the list",
+    "confirm_replace_body": "Replace your list?\n\nThe {current} product(s) you have now will be deleted, leaving only the {incoming} from the file.",
+    "confirm_replace_hint": "This cannot be undone. To keep a way back, cancel and export your list first.",
+    "confirm_replace_yes": "Yes, replace"
+  },
+  "order_priority": {
+    "window_title": "Priority order",
+    "heading": "Priority order after merging",
+    "subtitle": "{current} of yours and {new} new. Drag the rows or use ▲▼ — the bot searches the top ones first.",
+    "header_priority": "Priority",
+    "header_product": "Product",
+    "header_platform": "Platform",
+    "header_origin": "Origin",
+    "origin_new": "New",
+    "origin_current": "Current"
   }
 }

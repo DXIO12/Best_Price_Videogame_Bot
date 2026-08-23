@@ -8,7 +8,8 @@
     "confirm": "Confirmar",
     "all": "TODAS",
     "none": "Ninguna",
-    "n_selected": "{count} seleccionadas"
+    "n_selected": "{count} seleccionadas",
+    "accept": "Aceptar"
   },
   "main": {
     "window_title": "Price Bot",
@@ -66,7 +67,8 @@
     "status_pausing_bot": "Pausando el bot (se detendrá tras la tienda actual)...",
     "status_bot_paused": "Bot en pausa.",
     "status_bot_paused_remaining": "Bot en pausa — quedan {minutes} min para la próxima comprobación.",
-    "status_restarting_bot": "Reiniciando el bot (se descarta la comprobación pausada)..."
+    "status_restarting_bot": "Reiniciando el bot (se descarta la comprobación pausada)...",
+    "tooltip_data": "Importar y exportar productos"
   },
   "settings": {
     "window_title": "Ajustes",
@@ -102,7 +104,36 @@
     "telegram_test_ok": "Mensaje enviado. Mira tu Telegram: si ha llegado, ya está configurado.",
     "telegram_test_failed": "No se pudo enviar. Revisa el token y el ID de chat, y que hayas abierto conversación con tu bot al menos una vez.",
     "tooltip_telegram_bot_token": "El token que te da BotFather al crear un bot. Abre Telegram, habla con @BotFather, envía /newbot y sigue los pasos: el token es la línea larga que te responde. Se guarda sólo en este equipo, y nunca se escribe en ningún fichero que se comparta o se suba al repositorio.",
-    "tooltip_telegram_chat_id": "A qué chat se envían los avisos. Habla con @userinfobot en Telegram y te responde con tu ID. Para un grupo, añade el bot al grupo y usa el ID del grupo. Envía un mensaje de prueba abajo para confirmarlo."
+    "tooltip_telegram_chat_id": "A qué chat se envían los avisos. Habla con @userinfobot en Telegram y te responde con tu ID. Para un grupo, añade el bot al grupo y usa el ID del grupo. Envía un mensaje de prueba abajo para confirmarlo.",
+    "tab_data": "Datos",
+    "label_export_products": "Exportar productos:",
+    "btn_export_products": "Guardar en un JSON…",
+    "tooltip_export_products": "Guarda tu lista de seguimiento en un archivo JSON: qué productos, en qué\nplataformas, en qué orden y con qué URL en cada tienda.\nNO se exportan el token de Telegram, los ajustes, ni los precios ya vistos:\nsolo la lista. Sirve para llevártela a otro bot, o para tener una copia\nantes de tocar nada.",
+    "label_import_products": "Importar productos:",
+    "btn_import_products": "Cargar desde un JSON…",
+    "tooltip_import_products": "Carga productos desde un archivo exportado por otro bot.\nAntes de escribir nada te pregunta qué hacer: fusionar (añade los que falten\ny no toca los tuyos) o reemplazar (borra tu lista y deja solo la del archivo).\nNo se puede importar con el bot en marcha.",
+    "label_database_name": "Nombre:",
+    "btn_rename_database": "Renombrar…",
+    "tooltip_database_name": "Nombre del archivo de base de datos que la aplicación está usando ahora.\nAl renombrarlo se mueve el archivo en disco y el nombre nuevo se guarda en\nconfig.json, así que el siguiente arranque lo encuentra igual.\nNo se puede renombrar con el bot en marcha.",
+    "label_database_path": "Ruta:",
+    "label_product_count": "Productos:",
+    "data_bot_active": "Para el bot antes de importar o de renombrar la base de datos.\nMientras hay una comprobación en marcha, la base de datos está en uso.",
+    "export_dialog_title": "Exportar productos",
+    "import_dialog_title": "Importar productos",
+    "json_filter": "Archivos JSON (*.json)",
+    "export_failed": "No se pudo guardar el archivo.\n\n{error}",
+    "export_done": "Se han exportado {count} producto(s) a:\n{path}",
+    "import_unreadable": "No se pudo leer el archivo. ¿Seguro que es un JSON exportado por Price Bot?\n\n{error}",
+    "import_failed": "La importación falló a medias. Revisa la lista de productos.\n\n{error}",
+    "import_done": "Añadidos {added} producto(s).\nOmitidos por estar ya en tu lista: {skipped}.",
+    "import_done_replace": "Eliminados {removed} producto(s) y añadidos {added}.",
+    "import_unknown_platforms": "Plataformas del archivo que aquí no existen y se han omitido: {platforms}",
+    "rename_dialog_title": "Renombrar base de datos",
+    "rename_dialog_label": "Nombre nuevo del archivo:",
+    "rename_invalid": "Ese nombre no vale. Escribe solo un nombre de archivo, sin carpetas ni barras.",
+    "rename_exists": "Ya existe un archivo llamado «{name}» en esa carpeta.",
+    "rename_failed": "No se pudo renombrar el archivo.\n\n{error}",
+    "rename_done": "La base de datos se llama ahora «{name}»."
   },
   "add_product": {
     "window_title": "Añadir Producto",
@@ -181,5 +212,34 @@
   },
   "notify": {
     "price_alert": "¡ALERTA DE PRECIO!\n\nProducto: {product}\nTienda: {shop}\nPrecio actual: {price}€\nPrecio objetivo: {target}€\n\nURL:\n{url}"
+  },
+  "import_products": {
+    "window_title": "Importar productos",
+    "summary": "El archivo trae {total} producto(s), de los cuales {new} no están en tu lista.",
+    "mode_merge": "Fusionar con lo que ya tengo",
+    "mode_merge_hint": "Añade los que falten. No toca tus {current} actuales.",
+    "label_placement": "Prioridad de los nuevos:",
+    "placement_end": "Al final de mi lista",
+    "placement_start": "Al principio",
+    "placement_manual": "Ordenar a mano…",
+    "mode_replace": "Reemplazar mi lista",
+    "mode_replace_hint": "Borra tus {current} productos y deja solo los del archivo.",
+    "note_excluded": "No se importan el token de Telegram ni los precios ya vistos: solo la lista de seguimiento.",
+    "btn_import": "Importar",
+    "confirm_replace_title": "Reemplazar la lista",
+    "confirm_replace_body": "¿Seguro que quieres reemplazar tu lista?\n\nSe borrarán los {current} producto(s) que tienes ahora y quedarán solo los {incoming} del archivo.",
+    "confirm_replace_hint": "No se puede deshacer. Si quieres poder volver atrás, cancela y exporta antes tu lista.",
+    "confirm_replace_yes": "Sí, reemplazar"
+  },
+  "order_priority": {
+    "window_title": "Orden de prioridad",
+    "heading": "Orden de prioridad tras fusionar",
+    "subtitle": "{current} tuyos y {new} nuevos. Arrastra las filas o usa ▲▼ — el bot busca primero las de arriba.",
+    "header_priority": "Prioridad",
+    "header_product": "Producto",
+    "header_platform": "Plataforma",
+    "header_origin": "Origen",
+    "origin_new": "Nuevo",
+    "origin_current": "Actual"
   }
 }
