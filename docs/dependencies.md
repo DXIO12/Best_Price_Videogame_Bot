@@ -21,7 +21,7 @@ venv also accumulates packages nothing in the project imports.
 | `PyQt6` | 6.11.0 | `application/gui/` | Desktop GUI framework. All windows, dialogs, tables, and background workers. Also renders the launcher icon assets in `packaging/make_icons.py`, via the `QtSvg` module it ships with. |
 | `SQLAlchemy` | 2.0.49 | `application/database/` | ORM for SQLite. Manages all DB models, sessions, and queries. |
 | `playwright` | 1.59.0 | `application/shops/`, `application/services/url_resolvers/` | Browser automation for scraping shop prices and resolving product URLs. Requires `playwright install chromium` after install. |
-| `requests` | 2.33.1 | `application/bot/notifier.py` | HTTP client for sending Telegram notifications. |
+| `requests` | 2.33.1 | `application/notifications/telegram.py` | HTTP client for sending Telegram notifications. |
 | `APScheduler` | 3.11.2 | `application/bot/bot.py` | Scheduler for running price checks on a fixed interval when the bot runs headlessly. |
 | `python-dotenv` | 1.2.2 | `application/bot/bot.py` | Loads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from the `.env` file at startup. |
 

@@ -267,7 +267,7 @@ though it works fine from a source checkout where the shell is in the local cach
 
 **Telegram credentials come from the Settings dialog**, not from a `.env`. Someone running a
 distributed copy has no source tree to drop one into, and on Windows a file named `.env` is
-genuinely hard to create in Explorer. `notifier.get_telegram_credentials()` reads the database
+genuinely hard to create in Explorer. `notifications.telegram.load_credentials()` reads the database
 first and falls back to the environment, so a developer checkout with a `.env` keeps working
 unchanged.
 

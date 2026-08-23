@@ -9,8 +9,7 @@ price-bot/
 │   ├── bot/
 │   │   ├── __init__.py
 │   │   ├── bot.py
-│   │   ├── config.json
-│   │   └── notifier.py
+│   │   └── config.json
 │   │
 │   ├── config/
 │   │   ├── __init__.py
@@ -41,6 +40,11 @@ price-bot/
 │   │   └── languages/
 │   │       ├── en.json
 │   │       └── es.json
+│   │
+│   ├── notifications/
+│   │   ├── __init__.py
+│   │   ├── channel.py
+│   │   └── telegram.py
 │   │
 │   ├── services/
 │   │   ├── product_service.py
@@ -146,10 +150,22 @@ The headless bot package. Runs independently of the GUI on a schedule.
 
 | File | Description |
 | ------ | ----------- |
-| `__init__.py` | Marks `bot/` as a Python package so it can be imported as `bot.bot`, `bot.notifier`, etc. |
-| `bot.py` | Main bot entry point. Loads settings from the DB, scrapes all product URLs on a schedule (APScheduler), compares prices against targets, and sends Telegram notifications. Contains `check_prices()`, `_scrape()`, `should_notify()`, and `save_shop_record()`. |
+| `__init__.py` | Marks `bot/` as a Python package so it can be imported as `bot.bot`. |
+| `bot.py` | Main bot entry point. Loads settings from the DB, scrapes all product URLs on a schedule (APScheduler), compares prices against targets, and hands any hit to `notifications.send_to_enabled()`. Contains `check_prices()`, `_scrape()`, `should_notify()`, `send_notification()` and `save_shop_record()`. |
 | `config.json` | Legacy reference file. Bot settings are now read from the `Setting` table in the DB (configured via the Settings Bot dialog in the GUI). This file is no longer used at runtime. |
-| `notifier.py` | Sends Telegram messages via the Bot API using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from `.env`. Enforces a 10 s timeout and redacts the bot token from any error message before printing. |
+
+---
+
+### `application/notifications/`
+
+How an alert reaches a person. One module per channel, the same way one module per shop lives
+in `shops/`; nothing outside this package imports a channel directly.
+
+| File | Description |
+| ------ | ----------- |
+| `__init__.py` | The registry and the only call the bot makes: `send_to_enabled(alert)`, plus `available_channels()`, `get_channel()` and `enabled_keys()`. Channels are listed as explicit imports rather than discovered with `os.listdir()`, so PyInstaller's import analysis finds them and they need no `--add-data`. Returns True when at least one channel accepted the alert; a channel that raises is logged and skipped, never taking the pass down with it. |
+| `channel.py` | The contract each channel implements (`KEY`, `CREDENTIAL_FIELDS`, `is_available()`, `load_credentials()`, `is_configured()`, `send()`) and the `Alert` dataclass. The alert is passed **structured, not pre-rendered**: Telegram wants one flat message, a desktop toast a title plus body, an email a `Subject`. |
+| `telegram.py` | Telegram Bot API channel (was `bot/notifier.py`). Credentials resolve from the `Setting` table first and the `TELEGRAM_*` environment variables second. Enforces a 10 s timeout and redacts the bot token from every error message. `send_message()` is exposed separately from `send()` for the Settings dialog's *Test* button, which must send with the credentials **typed** rather than the ones stored. |
 
 ---
 

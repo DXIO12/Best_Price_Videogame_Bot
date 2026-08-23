@@ -32,7 +32,7 @@ from application.services.product_io import (
     rename_database,
     suggested_export_name,
 )
-from application.bot.notifier import send_telegram_message
+from application.notifications.telegram import send_message as send_telegram_message
 from application.config.runtime_config import get_debug_mode, write_config_settings
 from application.language_selector import available_languages, get_language, set_language, tr
 

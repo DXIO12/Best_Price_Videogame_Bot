@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from application.bot.notifier import get_telegram_credentials, send_telegram_message
+from application.notifications import Alert, send_to_enabled
 
 from application.shops.amazon import get_amazon_price
 from application.shops.game import get_game_price
@@ -23,7 +23,6 @@ from application.shops.playwright_utils import stop_browser
 
 from application.config.logger import get_logger
 from application.config.runtime_config import get_debug_mode
-from application.language_selector import tr
 
 from sqlalchemy import func
 
@@ -153,30 +152,29 @@ def mark_unavailable(db, shop_record: ProductShop):
 
 
 # =========================================================
-# SEND TELEGRAM NOTIFICATION
+# SEND NOTIFICATION
 # =========================================================
 
 def send_notification(product_name: str, shop: str, current_price: float,
                       target_price: float, url: str) -> bool:
-    """Send the price alert. Returns whether it actually went out.
+    """Send the price alert through every enabled channel.
+
+    Which channels those are, and how each renders the alert, belongs to
+    ``application.notifications`` — this function knows only that something has
+    to be announced. The alert is handed over structured rather than as one
+    string: a Telegram message, a desktop toast and an email subject are not
+    the same shape.
 
     The return value is what the caller writes into ``last_notified``: a send
-    that failed must not start the repeat-notification cooldown, or a Telegram
-    outage silently swallows the alert for the whole cooldown window."""
-    # The alert is the one piece of bot output a person reads, so it follows the
-    # selected language. Console logs below stay English on purpose.
-    message = tr(
-        "notify.price_alert",
+    that failed must not start the repeat-notification cooldown, or an outage
+    silently swallows the alert for the whole cooldown window."""
+    return send_to_enabled(Alert(
         product=product_name,
         shop=shop,
         price=current_price,
         target=target_price,
         url=url,
-    )
-    # Credentials come from the Settings dialog first, then the environment —
-    # a packaged build has no .env to read. See notifier.get_telegram_credentials.
-    token, chat_id = get_telegram_credentials()
-    return send_telegram_message(token, chat_id, message)
+    ))
 
 
 # =========================================================
