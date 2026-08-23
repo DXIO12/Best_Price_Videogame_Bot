@@ -31,6 +31,11 @@ last_prices.json
 *.bak*
 *.db.*
 
+# Which database file is in use. Deliberately NOT config.json: that file is
+# tracked, so a branch switch reverted the pointer, the app opened a database
+# that was not there, and SQLite created an empty one in its place.
+application/database/active_db.txt
+
 # =========================================
 # Runtime logs
 # =========================================

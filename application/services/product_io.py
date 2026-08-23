@@ -29,6 +29,7 @@ from application.database.db import (
     db_dir,
     rebind,
     sanitize_db_name,
+    write_pointer,
 )
 from application.database.models import Platform, Product
 from application.services.product_service import (
@@ -446,7 +447,8 @@ def rename_database(new_name: str) -> Path:
     The engine is disposed before the file moves and rebuilt after: SQLAlchemy
     hands out a fresh connection per session, and one opened against a path that
     no longer exists would silently create a second, empty database instead of
-    failing. Config is written last, so a failed move leaves nothing to undo."""
+    failing. The pointer is written last, so a failed move leaves nothing to
+    undo."""
     cleaned = sanitize_db_name(new_name)
     if cleaned is None:
         raise ProductIOError("invalid")
@@ -459,7 +461,6 @@ def rename_database(new_name: str) -> Path:
     if target.exists():
         raise ProductIOError("exists")
 
-    from application.config.runtime_config import write_config_settings
     from application.database.db import engine
 
     engine.dispose()
@@ -470,7 +471,8 @@ def rename_database(new_name: str) -> Path:
         # untouched original, so nothing is lost by the failed move.
         raise ProductIOError(str(exc)) from exc
 
-    write_config_settings({"database_name": cleaned})
+    # Pointer, not config.json — see the db module docstring for why.
+    write_pointer(cleaned)
     rebind(target)
 
     log.info(f"Database renamed: {current.name} -> {cleaned}")

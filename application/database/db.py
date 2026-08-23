@@ -1,18 +1,32 @@
 """SQLAlchemy engine, session factory and declarative base.
 
 The database file name is no longer fixed. It defaults to ``tracker.db`` but can
-be renamed from Settings → Data, and the chosen name is remembered in
-``config.json`` — the same mirror the rest of the app already uses. Everything
-here goes through :func:`database_path` so a rename only has to update that one
-key and call :func:`rebind`.
+be renamed from Settings → Data, and the chosen name is remembered in a pointer
+file sitting next to the database itself.
+
+**Not in config.json.** That was the first attempt and it was wrong: config.json
+is tracked by git, so a branch switch reverted the pointer, the app looked for a
+database that was no longer there, SQLite created an empty one without a word,
+and every product appeared to have vanished. The pointer belongs beside the data
+it names, outside version control — hence ``active_db.txt`` and the .gitignore
+entry for it.
 """
 
+import os
 import sys
 from pathlib import Path
+
+from application.config.logger import get_logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+_log = get_logger("database")
+
 DEFAULT_DB_NAME = "tracker.db"
+
+# One line of text holding the database file name in use. Gitignored, and kept
+# in the same directory as the database so the two travel together.
+POINTER_NAME = "active_db.txt"
 
 
 def db_dir() -> Path:
@@ -43,14 +57,31 @@ def sanitize_db_name(name) -> str | None:
     return cleaned
 
 
+def pointer_path() -> Path:
+    """The file recording which database is in use."""
+    return db_dir() / POINTER_NAME
+
+
+def write_pointer(name: str) -> None:
+    """Record ``name`` as the database to open from now on."""
+    pointer_path().write_text(name + "\n", encoding="utf-8")
+
+
 def database_name() -> str:
-    """Configured database file name, falling back to ``tracker.db``.
+    """Which database file to open: env override, then pointer, then default.
 
-    ``runtime_config`` is imported lazily: it reaches back into this module from
-    ``get_debug_mode()``, and a module-level import here would close that loop."""
-    from application.config.runtime_config import read_config_json
+    ``PRICE_BOT_DB`` wins outright, matching how PRICE_BOT_DEBUG, PRICE_BOT_LANG
+    and PRICE_BOT_LOG_DIR already work — it is what lets a test point somewhere
+    harmless without touching the pointer."""
+    override = sanitize_db_name(os.environ.get("PRICE_BOT_DB", ""))
+    if override:
+        return override
 
-    return sanitize_db_name(read_config_json().get("database_name")) or DEFAULT_DB_NAME
+    try:
+        stored = pointer_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        stored = ""
+    return sanitize_db_name(stored) or DEFAULT_DB_NAME
 
 
 def database_path() -> Path:
@@ -58,7 +89,32 @@ def database_path() -> Path:
     return db_dir() / database_name()
 
 
+def warn_if_missing(path: Path) -> None:
+    """Say something before conjuring a database out of nothing.
+
+    A missing file is normal exactly once, on a first run. Every other time it
+    means the app is pointed at the wrong place — and SQLite's habit of creating
+    an empty database rather than failing turns that into "all my products are
+    gone". Naming the neighbours makes it a two-second fix instead of a scare."""
+    if path.exists():
+        return
+
+    siblings = sorted(
+        sibling.name for sibling in path.parent.glob("*.db")
+        if sibling.name != path.name
+    )
+    if siblings:
+        _log.warning(
+            f"{path.name} does not exist: an EMPTY database is about to be created. "
+            f"Other databases in {path.parent}: {', '.join(siblings)}. "
+            f"If your products live in one of those, put its name in "
+            f"{POINTER_NAME} (or set PRICE_BOT_DB) and restart."
+        )
+
+
 DATABASE_URL = f"sqlite:///{database_path()}"
+
+warn_if_missing(database_path())
 
 engine = create_engine(DATABASE_URL, echo=False)
 
