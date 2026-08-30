@@ -44,6 +44,7 @@ price-bot/
 │   ├── notifications/
 │   │   ├── __init__.py
 │   │   ├── channel.py
+│   │   ├── desktop.py
 │   │   └── telegram.py
 │   │
 │   ├── services/
@@ -151,7 +152,7 @@ The headless bot package. Runs independently of the GUI on a schedule.
 | File | Description |
 | ------ | ----------- |
 | `__init__.py` | Marks `bot/` as a Python package so it can be imported as `bot.bot`. |
-| `bot.py` | Main bot entry point. Loads settings from the DB, scrapes all product URLs on a schedule (APScheduler), compares prices against targets, and hands any hit to `notifications.send_to_enabled()`. Contains `check_prices()`, `_scrape()`, `should_notify()`, `send_notification()` and `save_shop_record()`. |
+| `bot.py` | Main bot entry point. Loads settings from the DB, scrapes all product URLs on a schedule (APScheduler), compares prices against targets, and hands each product's hits to `notifications.send_alerts()`. Contains `check_prices()`, `_check_product()`, `_scrape()`, `should_notify()`, `send_notifications()` and `save_shop_record()`. Scraping and announcing are two phases rather than one loop: only once every shop of a product has a price does "the cheapest one" exist, and that is what a best-only channel needs. |
 | `config.json` | Legacy reference file. Bot settings are now read from the `Setting` table in the DB (configured via the Settings Bot dialog in the GUI). This file is no longer used at runtime. |
 
 ---
@@ -163,8 +164,9 @@ in `shops/`; nothing outside this package imports a channel directly.
 
 | File | Description |
 | ------ | ----------- |
-| `__init__.py` | The registry and the only call the bot makes: `send_to_enabled(alert)`, plus `available_channels()`, `get_channel()` and `enabled_keys()`. Channels are listed as explicit imports rather than discovered with `os.listdir()`, so PyInstaller's import analysis finds them and they need no `--add-data`. Returns True when at least one channel accepted the alert; a channel that raises is logged and skipped, never taking the pass down with it. |
-| `channel.py` | The contract each channel implements (`KEY`, `CREDENTIAL_FIELDS`, `is_available()`, `load_credentials()`, `is_configured()`, `send()`) and the `Alert` dataclass. The alert is passed **structured, not pre-rendered**: Telegram wants one flat message, a desktop toast a title plus body, an email a `Subject`. |
+| `__init__.py` | The registry and the only call the bot makes: `send_alerts(alerts, force_best_only)` (with `send_to_enabled(alert)` as its single-hit wrapper), plus `available_channels()`, `get_channel()`, `enabled_keys()` and `default_keys()`. Each channel's `DELIVERY_SCOPE` decides how much of one product's hits it receives — all of them, or only the cheapest — and the global *Notify only best price* setting narrows every channel on top of that. Channels are listed as explicit imports rather than discovered with `os.listdir()`, so PyInstaller's import analysis finds them and they need no `--add-data`. Returns True when at least one channel accepted the alert; a channel that raises is logged and skipped, never taking the pass down with it. |
+| `channel.py` | The contract each channel implements (`KEY`, `DELIVERY_SCOPE`, `CREDENTIAL_FIELDS`, `is_available()`, `load_credentials()`, `load_stored()`, `store()`, `is_configured()`, `send()`), the `SCOPE_ALL` / `SCOPE_BEST` constants and the `Alert` dataclass. The alert is passed **structured, not pre-rendered**: Telegram wants one flat message, a desktop toast a title plus body, an email a `Subject`. |
+| `desktop.py` | The notification the OS itself draws. `SCOPE_BEST`: only the cheapest shop, because a popup per shop is five or six of them queued in front of whatever you were doing. `notify-send` on Linux, a WinRT toast through PowerShell on Windows — no new dependency either way, and no Qt, so it behaves identically in the GUI process and in the headless bot. `is_available()` checks for a graphical session and the binary, so a machine that cannot show one says so in Settings instead of failing every cycle. Carries no URL: Cinnamon reports no `body-hyperlinks`, and a real action button would mean keeping a child process alive per alert. |
 | `telegram.py` | Telegram Bot API channel (was `bot/notifier.py`). Credentials resolve from the `Setting` table first and the `TELEGRAM_*` environment variables second. Enforces a 10 s timeout and redacts the bot token from every error message. `send_message()` is exposed separately from `send()` for the Settings dialog's *Test* button, which must send with the credentials **typed** rather than the ones stored. |
 
 ---
@@ -417,7 +419,7 @@ Created by `packaging/build_exe.sh` (or `.bat`) via PyInstaller. Not committed t
 | ------ | ----------- |
 | `README.md` | Project overview and quick-start instructions. |
 | `requirements.txt` | The six runtime dependencies, pinned. Hand-kept rather than `pip freeze`d: the working venv also carries packages nothing under `application/` imports. PyInstaller is deliberately absent — it is only needed to produce a distributable, and `packaging/build_exe.sh` installs it on demand. |
-| `.env` | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`. Stays at the repo root: `application/bot/bot.py` calls `load_dotenv()`, which walks up from its own directory and finds it — so the working directory is irrelevant when running from source. **Not so in a frozen build**: `find_dotenv()` switches to `os.getcwd()` when `sys.frozen` is set, so a distributed `dist/` needs its own `.env` beside the executable, and must be launched from there. Gitignored. |
+| `.env` | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`. Stays at the repo root: `notifications/telegram.py` calls `load_dotenv()` when it resolves credentials (and `application/bot/bot.py` at import), which walks up from its own directory and finds it — so the working directory is irrelevant when running from source. The call in `telegram.py` is load-bearing: only `bot.py` used to make it, so the same installation looked configured to the headless bot and unconfigured to the GUI's Settings dialog. **Not so in a frozen build**: `find_dotenv()` switches to `os.getcwd()` when `sys.frozen` is set, so a distributed `dist/` needs its own `.env` beside the executable, and must be launched from there. Gitignored. |
 | `.gitignore` | Ignore rules. Paths that point inside the app are anchored to the repo root, so they carry the `application/` prefix (`application/shops/fnac.py`, `application/services/url_resolvers/carrefour_url_resolver.py`, `application/services/url_resolvers/corteingles_url_resolver.py`). The **Backups** section (`*.bak*`, `*.db.*`) exists because `*.db` matches only names that *end* in `.db`, so a copy named `tracker.db.bak-20260822-111558` showed up as untracked. Note the file lists itself, which has no effect — ignore rules do not apply to a file already in the index. |
 
 ---

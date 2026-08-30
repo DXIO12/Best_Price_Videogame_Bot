@@ -86,7 +86,7 @@
     "suffix_minutes": " min",
     "suffix_shops_at_once": " shops at once",
     "tooltip_check_interval_minutes": "How often (in minutes) the bot checks product prices.\nDefault: 30 min.",
-    "tooltip_notify_only_best_price": "ON  → Only the cheapest shop that beats the target triggers a notification.\nOFF → Every shop below the target price sends its own notification.",
+    "tooltip_notify_only_best_price": "ON  → Every method reports only the cheapest shop that beats the target.\nOFF → Each method decides for itself: Telegram sends one message per\n      shop below the target, while the desktop notification always\n      shows the cheapest one only, so one drop cannot bury you in popups.",
     "tooltip_repeat_notifications": "ON  → Re-send the notification after the cooldown period,\n      even if the price hasn't changed.\nOFF → Notify only when the price drops for the first time.",
     "tooltip_repeat_notification_minutes": "Minutes to wait before repeating a notification for the same product.\nOnly active when 'Repeat notifications' is ON.\nDefault: 90 min.",
     "tooltip_allow_parallel_scraping": "ON  → Several shops are scraped at the same time, so a full check\n      takes about as long as the slowest shop instead of the sum\n      of them all.\nOFF → One shop after another (original behaviour).\nEach shop is still visited by a single worker, so no site ever\nreceives two simultaneous requests.",
@@ -109,6 +109,14 @@
     "label_notification_channels": "Send alerts via:",
     "tooltip_notification_channels": "Which methods carry a price alert.\nTick as many as you like — Telegram on your phone and a desktop\nnotification on this machine work at the same time.\nA method you tick has to be filled in below before you can save.",
     "channel_telegram": "Telegram",
+    "channel_desktop": "Desktop notification",
+    "tooltip_channel_desktop": "The notification your system draws in the corner of the screen.\nNothing to configure, but it only reaches you while you are at\nthis machine — and how long it stays up is your desktop's own\nsetting, not the app's.",
+    "btn_test_desktop": "Show a test notification",
+    "desktop_test_message": "Price Bot is set up. Alerts will pop up here.",
+    "desktop_test_missing": "This channel needs no configuration.",
+    "desktop_test_sending": "Showing...",
+    "desktop_test_ok": "Notification shown. If you saw it in the corner, you are set up.",
+    "desktop_test_failed": "Could not show it. Your desktop may have no notification service running.",
     "channel_unavailable": "not available on this system",
     "channel_from_environment": "Already configured outside the app (environment / .env). Fill these in only to override it.",
     "channel_not_configured": "\u201c{channel}\u201d is switched on but not filled in. Complete its details, or untick it.",
@@ -219,7 +227,9 @@
     "confirm_outro": "\n\nDo you want to continue?"
   },
   "notify": {
-    "price_alert": "PRICE ALERT!\n\nProduct: {product}\nShop: {shop}\nCurrent price: {price}€\nTarget price: {target}€\n\nURL:\n{url}"
+    "price_alert": "PRICE ALERT!\n\nProduct: {product}\nShop: {shop}\nCurrent price: {price}€\nTarget price: {target}€\n\nURL:\n{url}",
+    "desktop_title": "Price drop!",
+    "desktop_body": "{product}\n{price}€ at {shop} — target {target}€"
   },
   "import_products": {
     "window_title": "Import products",
