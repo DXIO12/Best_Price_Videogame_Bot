@@ -12,13 +12,15 @@ go missing that way.
 """
 
 from application.config.logger import get_logger
-from application.notifications import telegram
-from application.notifications.channel import Alert
+from application.notifications import desktop, telegram
+from application.notifications.channel import Alert, SCOPE_ALL, SCOPE_BEST
 
 log = get_logger("notifications")
 
 
-_CHANNELS = (telegram,)
+# Order is display order in the Settings tab: the one that reaches you
+# anywhere first, then the one that only reaches this machine.
+_CHANNELS = (telegram, desktop)
 
 # What an installation that has never seen the Notifications tab uses. Telegram
 # was the only channel before it existed, so this is also the migration rule:
@@ -87,22 +89,13 @@ def enabled_keys() -> list[str]:
     return [key for key in keys if get_channel(key) is not None]
 
 
-def send_to_enabled(alert: Alert) -> bool:
-    """Send one alert through every enabled channel.
+def _usable_channels() -> list:
+    """Enabled channels this machine can actually send through, already
+    reported on. Everything skipped here is a configuration problem, so it is
+    logged once per pass rather than swallowed."""
+    usable = []
 
-    Returns True when **at least one** channel accepted it. That is what the
-    caller writes into ``last_notified``: one working channel means the person
-    was told, and re-alerting on the next pass because a second channel is
-    misconfigured would spam the one that works.
-    """
-    keys = enabled_keys()
-    if not keys:
-        log.warning("No notification channel is enabled — alert not sent.")
-        return False
-
-    delivered = False
-
-    for key in keys:
+    for key in enabled_keys():
         channel = get_channel(key)
         if channel is None:
             continue
@@ -111,28 +104,76 @@ def send_to_enabled(alert: Alert) -> bool:
             log.warning(f"Notification channel '{key}' is not available on this system.")
             continue
 
-        credentials = channel.load_credentials()
-        if not channel.is_configured(credentials):
+        if not channel.is_configured(channel.load_credentials()):
             log.error(f"Notification channel '{key}' is enabled but not configured.")
             continue
 
-        try:
-            if channel.send(credentials, alert):
-                delivered = True
-        except Exception as error:
-            # One broken channel must not take down the pass, nor stop the
-            # channels after it in the list.
-            log.error(f"Notification channel '{key}' raised: {error}")
+        usable.append(channel)
+
+    return usable
+
+
+def send_alerts(alerts: list[Alert], force_best_only: bool = False) -> list[bool]:
+    """Deliver one product's hits, each channel getting as much as it wants.
+
+    ``alerts`` is every shop of a single product that beat the target and is
+    due a notification. A channel declaring ``SCOPE_BEST`` receives only the
+    cheapest of them; the rest receive all. ``force_best_only`` is the global
+    *Notify only best price* setting, which narrows **every** channel.
+
+    Returns one flag per alert: True when at least one channel accepted it.
+    That is what the caller writes into ``last_notified`` — one working channel
+    means the person was told, and re-alerting because a second channel is
+    misconfigured would spam the one that works. An alert no channel wanted
+    (the shops that are not the cheapest, when only a best-only channel is on)
+    is False, so its row stays un-notified and is free to alert later.
+    """
+    if not alerts:
+        return []
+
+    channels = _usable_channels()
+    if not channels:
+        log.warning("No notification channel is enabled — alert not sent.")
+        return [False] * len(alerts)
+
+    best_index = min(range(len(alerts)), key=lambda index: alerts[index].price)
+    delivered = [False] * len(alerts)
+
+    for channel in channels:
+        scope = getattr(channel, "DELIVERY_SCOPE", SCOPE_ALL)
+        if force_best_only or scope == SCOPE_BEST:
+            indices = [best_index]
+        else:
+            indices = range(len(alerts))
+
+        credentials = channel.load_credentials()
+        for index in indices:
+            try:
+                if channel.send(credentials, alerts[index]):
+                    delivered[index] = True
+            except Exception as error:
+                # One broken channel must not take down the pass, nor stop the
+                # channels after it in the list.
+                log.error(f"Notification channel '{channel.KEY}' raised: {error}")
 
     return delivered
+
+
+def send_to_enabled(alert: Alert) -> bool:
+    """One alert, every enabled channel. The single-hit case of
+    :func:`send_alerts`, kept because most callers have exactly one."""
+    return send_alerts([alert])[0]
 
 
 __all__ = [
     "Alert",
     "DEFAULT_CHANNELS",
+    "SCOPE_ALL",
+    "SCOPE_BEST",
     "available_channels",
     "default_keys",
     "enabled_keys",
     "get_channel",
+    "send_alerts",
     "send_to_enabled",
 ]

@@ -7,6 +7,7 @@ asks ``send_to_enabled()`` and never learns which channels exist.
 Each channel module exposes:
 
     KEY                 str          stable id — settings, config.json, i18n keys
+    DELIVERY_SCOPE      str          SCOPE_ALL (default) or SCOPE_BEST
     CREDENTIAL_FIELDS   tuple[str]   what the Settings dialog draws for it
     SECRET_FIELDS       tuple[str]   subset of the above shown masked
     is_available()      -> bool      can this machine use the channel at all
@@ -15,6 +16,12 @@ Each channel module exposes:
     store(s, values)    -> None      write them back onto a Setting row
     is_configured(c)    -> bool      are those credentials complete
     send(c, alert)      -> bool      True only if it actually went out
+
+``DELIVERY_SCOPE`` is how much of one product's hits the channel wants: every
+shop that beat the target, or only the cheapest. It belongs to the channel
+rather than to the caller because it follows from the medium — a chat log keeps
+eight messages for you to scroll, eight desktop popups have to be sat through.
+Omit it and the channel gets everything.
 
 A channel with nothing to configure leaves ``CREDENTIAL_FIELDS`` empty and
 ``load_stored`` / ``store`` as no-ops; the Settings dialog then draws it as a
@@ -42,6 +49,10 @@ take it apart again.
 
 from dataclasses import dataclass
 
+# Values for a channel's DELIVERY_SCOPE.
+SCOPE_ALL = "all"
+SCOPE_BEST = "best"
+
 
 @dataclass(frozen=True)
 class Alert:
@@ -52,3 +63,13 @@ class Alert:
     price: float
     target: float
     url: str
+
+    @property
+    def price_text(self) -> str:
+        """Two decimals, for channels with one line to say it in. A raw float
+        renders as "42.9€", which reads like a price that was cut off."""
+        return f"{self.price:.2f}"
+
+    @property
+    def target_text(self) -> str:
+        return f"{self.target:.2f}"

@@ -11,12 +11,17 @@ from dotenv import load_dotenv
 
 from application.config.logger import get_logger
 from application.language_selector import tr
-from application.notifications.channel import Alert
+from application.notifications.channel import Alert, SCOPE_ALL
 
 log = get_logger("notifications.telegram")
 
 
 KEY = "telegram"
+
+# Every shop that beat the target. The messages stack in a chat you read when
+# it suits you, and knowing the other six prices is the point of tracking six
+# shops.
+DELIVERY_SCOPE = SCOPE_ALL
 
 CREDENTIAL_FIELDS = ("bot_token", "chat_id")
 

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from application.notifications import Alert, send_to_enabled
+from application.notifications import Alert, send_alerts
 
 from application.shops.amazon import get_amazon_price
 from application.shops.game import get_game_price
@@ -155,26 +155,31 @@ def mark_unavailable(db, shop_record: ProductShop):
 # SEND NOTIFICATION
 # =========================================================
 
-def send_notification(product_name: str, shop: str, current_price: float,
-                      target_price: float, url: str) -> bool:
-    """Send the price alert through every enabled channel.
+def send_notifications(product_name: str, target_price: float,
+                       hits: list, settings: dict) -> list[bool]:
+    """Announce one product's hits, and report what was delivered.
 
-    Which channels those are, and how each renders the alert, belongs to
-    ``application.notifications`` — this function knows only that something has
-    to be announced. The alert is handed over structured rather than as one
-    string: a Telegram message, a desktop toast and an email subject are not
-    the same shape.
+    ``hits`` is every ``(price, record)`` of this product that beat the target
+    and is due an alert. They are handed over **together** rather than one at a
+    time because how many of them a person should receive is the channel's
+    call, not this module's: Telegram takes them all, the desktop takes only
+    the cheapest. The global *Notify only best price* setting narrows every
+    channel on top of that.
 
-    The return value is what the caller writes into ``last_notified``: a send
-    that failed must not start the repeat-notification cooldown, or an outage
-    silently swallows the alert for the whole cooldown window."""
-    return send_to_enabled(Alert(
-        product=product_name,
-        shop=shop,
-        price=current_price,
-        target=target_price,
-        url=url,
-    ))
+    The returned flags are what the caller writes into ``last_notified``: a
+    send that failed must not start the repeat-notification cooldown, or an
+    outage silently swallows the alert for the whole window."""
+    alerts = [
+        Alert(
+            product=product_name,
+            shop=record.shop,
+            price=price,
+            target=target_price,
+            url=record.url,
+        )
+        for price, record in hits
+    ]
+    return send_alerts(alerts, force_best_only=settings["notify_only_best_price"])
 
 
 # =========================================================
@@ -266,12 +271,8 @@ def check_prices(stop_event=None, pause_event=None):
             log.rule()
             log.info(f"Product: {name} | Target: {target_price}€")
 
-            if settings["notify_only_best_price"]:
-                _check_best_price(db, name, target_price, shop_records, settings,
-                                  stop_event, prices, pause_event)
-            else:
-                _check_all_shops(db, name, target_price, shop_records, settings,
-                                 stop_event, prices, pause_event)
+            _check_product(db, name, target_price, shop_records, settings,
+                           stop_event, prices, pause_event)
 
     finally:
         db.close()
@@ -282,53 +283,21 @@ def check_prices(stop_event=None, pause_event=None):
 
 
 # =========================================================
-# STRATEGY A — notify only the single best price
+# ONE PRODUCT: SCRAPE EVERY SHOP, THEN ANNOUNCE
 # =========================================================
 
-def _check_best_price(db, product_name: str, target_price: float,
-                      shop_records: list, settings: dict, stop_event=None,
-                      prices: dict | None = None, pause_event=None):
-    """Scrape all shops, then send one notification for the cheapest hit."""
+def _check_product(db, product_name: str, target_price: float,
+                   shop_records: list, settings: dict, stop_event=None,
+                   prices: dict | None = None, pause_event=None):
+    """Scrape every shop of one product, then hand the hits to the channels.
+
+    Scraping and announcing are two phases, not one loop, and that is the whole
+    point: only once every shop has a price can "the cheapest one" exist. Which
+    channel wants only that one, and which wants all of them, is decided in
+    ``application.notifications`` — here every hit is collected and offered.
+    """
     hits = []
 
-    for record in shop_records:
-        if not _wait_while_paused(pause_event, stop_event):
-            break
-
-        price = _scrape(record, prices)
-        if price is not None:
-            save_shop_record(db, record, price, notified=False)
-            if price <= target_price:
-                hits.append((price, record))
-        elif record.url and record.url.strip():
-            mark_unavailable(db, record)
-
-    if not hits:
-        log.warning(f"  No prices at or below target for {product_name}.")
-        return
-
-    best_price, best_record = min(hits, key=lambda x: x[0])
-
-    if should_notify(best_record, best_price, settings):
-        log.info(f"  BEST PRICE: {best_price}€ at {best_record.shop}")
-        notified = send_notification(product_name, best_record.shop,
-                                     best_price, target_price, best_record.url)
-        if not notified:
-            log.warning(f"  Alert for {product_name} was not delivered — "
-                        f"it will be retried on the next pass.")
-        save_shop_record(db, best_record, best_price, notified=notified)
-    else:
-        log.debug(f"  Best price {best_price}€ already notified recently.")
-
-
-# =========================================================
-# STRATEGY B — notify every shop that beats the target
-# =========================================================
-
-def _check_all_shops(db, product_name: str, target_price: float,
-                     shop_records: list, settings: dict, stop_event=None,
-                     prices: dict | None = None, pause_event=None):
-    """Scrape each shop and notify individually for every hit."""
     for record in shop_records:
         if not _wait_while_paused(pause_event, stop_event):
             break
@@ -340,23 +309,37 @@ def _check_all_shops(db, product_name: str, target_price: float,
                 mark_unavailable(db, record)
             continue
 
-        # Always persist the latest price
-        notified = False
+        # The latest price is persisted for every shop, alert or no alert:
+        # the GUI table shows all of them.
+        save_shop_record(db, record, price, notified=False)
 
-        if price <= target_price:
-            if should_notify(record, price, settings):
-                log.info(f"  ALERT: {record.shop} → {price}€")
-                notified = send_notification(product_name, record.shop,
-                                             price, target_price, record.url)
-                if not notified:
-                    log.warning(f"  Alert for {product_name} at {record.shop} was "
-                                f"not delivered — it will be retried on the next pass.")
-            else:
-                log.debug(f"  {record.shop}: {price}€ — already notified recently.")
-        else:
+        if price > target_price:
             log.debug(f"  {record.shop}: {price}€ — above target.")
+        elif should_notify(record, price, settings):
+            hits.append((price, record))
+        else:
+            log.debug(f"  {record.shop}: {price}€ — already notified recently.")
 
-        save_shop_record(db, record, price, notified=notified)
+    if not hits:
+        return
+
+    best_price, best_record = min(hits, key=lambda hit: hit[0])
+    log.info(f"  BEST PRICE: {best_price}€ at {best_record.shop}")
+    for price, record in hits:
+        if record is not best_record:
+            log.info(f"  ALSO BELOW TARGET: {record.shop} → {price}€")
+
+    delivered = send_notifications(product_name, target_price, hits, settings)
+
+    for (price, record), was_delivered in zip(hits, delivered):
+        if was_delivered:
+            save_shop_record(db, record, price, notified=True)
+        else:
+            # Either no channel wanted this shop (a best-only channel skipped
+            # it) or every channel failed. Both mean nobody was told, so the
+            # row stays un-notified and is free to alert on a later pass —
+            # marking it now would start the cooldown on a silence.
+            log.debug(f"  {record.shop}: {price}€ — not delivered.")
 
 
 # =========================================================
