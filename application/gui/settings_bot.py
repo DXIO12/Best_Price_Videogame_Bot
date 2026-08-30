@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QFrame,
+    QScrollArea,
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -76,9 +77,11 @@ class SettingsBotDialog(QDialog):
         # "Settings", not "Settings Bot": the window now also holds
         # application-level options (language, debug mode, parallel scraping).
         self.setWindowTitle(tr("settings.window_title"))
-        # Tall enough for the Application tab, which is now the longer of the
-        # two: the Telegram rows and their test button sit below debug mode.
-        self.resize(520, 400)
+        # Sized for the Notifications tab, now the tallest: three channels, and
+        # the email one alone draws five credential rows and a test button.
+        # That tab scrolls when it has to, so this is a comfortable default
+        # rather than a limit the next channel will break.
+        self.resize(520, 560)
         self._load_data()
         self._setup_ui()
 
@@ -346,7 +349,16 @@ class SettingsBotDialog(QDialog):
             group.setVisible(entry["check"].isChecked())
             entry["check"].toggled.connect(group.setVisible)
 
-        return page
+        # The only tab that grows with the code: every channel added to
+        # application/notifications/ puts another credential block on it, and
+        # email alone is five rows plus a test button. A scroll area is the one
+        # answer that does not need revisiting per channel — and it costs
+        # nothing while the blocks fit, since it only scrolls when they do not.
+        scroller = QScrollArea()
+        scroller.setWidgetResizable(True)
+        scroller.setFrameShape(QFrame.Shape.NoFrame)
+        scroller.setWidget(page)
+        return scroller
 
     def _build_channel_group(self, entry) -> QWidget | None:
         """The credentials block for one channel, or None if it has nothing to

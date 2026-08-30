@@ -12,15 +12,15 @@ go missing that way.
 """
 
 from application.config.logger import get_logger
-from application.notifications import desktop, telegram
-from application.notifications.channel import Alert, SCOPE_ALL, SCOPE_BEST
+from application.notifications import desktop, email, telegram
+from application.notifications.channel import Alert, SCOPE_ALL, SCOPE_BEST, SCOPE_DIGEST
 
 log = get_logger("notifications")
 
 
-# Order is display order in the Settings tab: the one that reaches you
-# anywhere first, then the one that only reaches this machine.
-_CHANNELS = (telegram, desktop)
+# Order is display order in the Settings tab: the ones that reach you anywhere
+# first, then the one that only reaches this machine.
+_CHANNELS = (telegram, email, desktop)
 
 # What an installation that has never seen the Notifications tab uses. Telegram
 # was the only channel before it existed, so this is also the migration rule:
@@ -118,8 +118,10 @@ def send_alerts(alerts: list[Alert], force_best_only: bool = False) -> list[bool
 
     ``alerts`` is every shop of a single product that beat the target and is
     due a notification. A channel declaring ``SCOPE_BEST`` receives only the
-    cheapest of them; the rest receive all. ``force_best_only`` is the global
-    *Notify only best price* setting, which narrows **every** channel.
+    cheapest of them, ``SCOPE_DIGEST`` receives all of them in one message, and
+    the rest receive all of them one at a time. ``force_best_only`` is the
+    global *Notify only best price* setting, which narrows **every** channel —
+    a digest included, which then carries a single line.
 
     Returns one flag per alert: True when at least one channel accepted it.
     That is what the caller writes into ``last_notified`` — one working channel
@@ -147,6 +149,21 @@ def send_alerts(alerts: list[Alert], force_best_only: bool = False) -> list[bool
             indices = range(len(alerts))
 
         credentials = channel.load_credentials()
+
+        if scope == SCOPE_DIGEST:
+            # One message for the lot, cheapest first — and one answer for the
+            # lot with it: a digest that did not go out told nobody about any
+            # of these shops, so none of them may be stamped as notified.
+            batch = sorted((alerts[index] for index in indices),
+                           key=lambda alert: alert.price)
+            try:
+                if channel.send_digest(credentials, batch):
+                    for index in indices:
+                        delivered[index] = True
+            except Exception as error:
+                log.error(f"Notification channel '{channel.KEY}' raised: {error}")
+            continue
+
         for index in indices:
             try:
                 if channel.send(credentials, alerts[index]):
@@ -170,6 +187,7 @@ __all__ = [
     "DEFAULT_CHANNELS",
     "SCOPE_ALL",
     "SCOPE_BEST",
+    "SCOPE_DIGEST",
     "available_channels",
     "default_keys",
     "enabled_keys",

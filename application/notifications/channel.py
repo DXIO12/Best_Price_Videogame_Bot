@@ -7,7 +7,7 @@ asks ``send_to_enabled()`` and never learns which channels exist.
 Each channel module exposes:
 
     KEY                 str          stable id — settings, config.json, i18n keys
-    DELIVERY_SCOPE      str          SCOPE_ALL (default) or SCOPE_BEST
+    DELIVERY_SCOPE      str          SCOPE_ALL (default), SCOPE_BEST or SCOPE_DIGEST
     CREDENTIAL_FIELDS   tuple[str]   what the Settings dialog draws for it
     SECRET_FIELDS       tuple[str]   subset of the above shown masked
     is_available()      -> bool      can this machine use the channel at all
@@ -18,10 +18,21 @@ Each channel module exposes:
     send(c, alert)      -> bool      True only if it actually went out
 
 ``DELIVERY_SCOPE`` is how much of one product's hits the channel wants: every
-shop that beat the target, or only the cheapest. It belongs to the channel
-rather than to the caller because it follows from the medium — a chat log keeps
-eight messages for you to scroll, eight desktop popups have to be sat through.
-Omit it and the channel gets everything.
+shop that beat the target, only the cheapest, or all of them gathered into one
+message. It belongs to the channel rather than to the caller because it follows
+from the medium — a chat log keeps eight messages for you to scroll, eight
+desktop popups have to be sat through, and eight emails for one price drop is
+what a filter gets written for. Omit it and the channel gets everything.
+
+A channel declaring ``SCOPE_DIGEST`` implements one extra entry point::
+
+    send_digest(c, alerts) -> bool   one message carrying every alert
+
+``alerts`` arrives sorted cheapest first, and the answer is **all or nothing**:
+a digest that failed to send told nobody about any of its shops, so a False
+leaves every one of those rows free to alert again on a later pass. Such a
+channel should still expose ``send`` — a digest of one — so that any caller
+holding a single alert does not have to know which scope it is talking to.
 
 A channel with nothing to configure leaves ``CREDENTIAL_FIELDS`` empty and
 ``load_stored`` / ``store`` as no-ops; the Settings dialog then draws it as a
@@ -52,6 +63,9 @@ from dataclasses import dataclass
 # Values for a channel's DELIVERY_SCOPE.
 SCOPE_ALL = "all"
 SCOPE_BEST = "best"
+# Every hit, but in a single message rather than one each. Only worth having
+# for a medium where the message itself is the unit of interruption.
+SCOPE_DIGEST = "digest"
 
 
 @dataclass(frozen=True)

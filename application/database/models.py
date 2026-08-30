@@ -93,6 +93,24 @@ class Setting(Base):
     telegram_bot_token = Column(String)
     telegram_chat_id = Column(String)
 
+    # SMTP settings for the email channel. Same rule as the Telegram pair
+    # above: stored here so a packaged build is configurable from its own
+    # dialog, and never mirrored to config.json — smtp_password is an account
+    # password, and that file is tracked in git.
+    #
+    # smtp_port is TEXT rather than INTEGER on purpose. Settings writes every
+    # channel's fields on every Save, ticked or not, so an int() here would have
+    # to cope with whatever is sitting in an untouched field; the raw string is
+    # kept and parsed at use, where a bad one can be reported.
+    #
+    # There is no recipient column: the alert goes to smtp_user. That account
+    # is already the only address the message can claim as its sender, so a
+    # separate destination would be asking for the same address twice.
+    smtp_host = Column(String)
+    smtp_port = Column(String)
+    smtp_user = Column(String)
+    smtp_password = Column(String)
+
     # Which notification channels are switched on, as a CSV of channel keys
     # ("telegram,desktop"). A CSV rather than a table: it is at most a handful
     # of values from a closed set, on a table that only ever holds one row.
