@@ -68,15 +68,36 @@ and URL resolver needs Chromium.
 
 ### 3. Create the `.env` file
 
-In the project root, with your Telegram credentials:
+In the project root, with the credentials of whichever notification channels you use. Every
+line is optional — a channel you do not use needs none of them, and the desktop channel needs
+nothing at all:
 
-```
+```ini
+# Telegram — @BotFather gives the token, @userinfobot the chat id
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
+
+# Email — the address alerts are sent from AND to
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=your_app_password_here
+SMTP_HOST=      # optional: worked out from the address for the common providers
+SMTP_PORT=      # optional: 587
 ```
+
+`SMTP_PASSWORD` is an **app password**, never the account one — Gmail, Outlook and Yahoo all
+reject the account password for SMTP. On Gmail: turn on 2-Step Verification, go to
+`myaccount.google.com/apppasswords`, create one named `Price Bot`, and type the 16 characters
+**without the spaces** Google displays them with. The README's *Choose how you get notified*
+section has the same steps with screenshots' worth of detail.
 
 Gitignored, and never to be committed. The launchers tighten its permissions on every start
 (`chmod 600`, or `icacls` on Windows).
+
+This file is read by the app **and** by the headless bot; the Settings dialog shows a channel
+configured this way as *already configured outside the app* rather than asking for it again.
+Credentials typed into the dialog go to the database instead, and take precedence — but only
+when that channel's set is complete there, so a half-filled dialog does not shadow a working
+`.env`.
 
 ### 4. Initialise the database — optional
 

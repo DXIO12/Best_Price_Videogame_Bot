@@ -38,21 +38,81 @@ playwright install chromium
 The last line is **not optional**. Playwright ships no browser of its own, and every price
 scraper needs Chromium.
 
-### 2. Connect Telegram — once
+### 2. Choose how you get notified — once
 
-Alerts arrive over Telegram, so the app needs a bot of your own:
+**gear icon → Notifications.** Tick as many as you like; they work at the same time, and each
+one has its own *Test* button that sends with what is **typed**, not what is saved, so you can
+confirm a password before accepting it. A ticked method has to be filled in before you can save.
 
-1. Message **@BotFather** on Telegram, send `/newbot`, follow the prompts — it replies with a
-   **token**
+| | Reaches you | Needs setting up |
+| --- | --- | --- |
+| **Desktop notification** | only at this machine | nothing at all |
+| **Telegram** | anywhere, on your phone | a bot of your own |
+| **Email** | anywhere, and it waits in your inbox | your address + an app password |
+
+How much of one price drop each one sends differs on purpose: Telegram sends **one message per
+shop** below your target, email gathers them into **one message** listing all of them cheapest
+first, and the desktop shows **only the cheapest** — five popups in a row is not useful. The
+*Notify only best price* switch on the Bot tab narrows all three to the cheapest.
+
+#### Telegram
+
+1. Message **@BotFather**, send `/newbot`, follow the prompts — it replies with a **token**
 2. Message **@userinfobot**, which replies with your **chat ID**
-3. In the app: **gear icon → Application**, paste both, and press **Send a test message**
+3. Paste both, and press **Send a test message**
 
 Open a chat with your own bot and press *Start* before testing — Telegram blocks bots from
 messaging anyone who has not spoken to them first.
 
-Credentials are stored in the local database, never in a file that is shared or committed.
-A `.env` in the project root with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` still works as
-a fallback if you prefer it.
+#### Email
+
+Two fields: **your address**, and an **app password**. The SMTP server is worked out from your
+address (Gmail, Outlook, Hotmail, Live, Yahoo, iCloud, GMX, AOL, Zoho) and the port defaults to
+587, so both of those stay empty unless your provider is an unusual one — a company or
+university account, say.
+
+The alert is sent from your own account **to your own account**; there is no separate recipient
+field.
+
+**Generating the app password on Gmail.** Your normal account password does not work here —
+Google rejects it, and so do Outlook and Yahoo. You need an *app password*: a separate one that
+only sends mail, and that you can revoke on its own without changing anything else.
+
+1. Turn on **2-Step Verification** for your Google account — without it the next page does not
+   exist
+2. Go to **[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)**
+3. Name it `Price Bot` and press **Create**
+4. Google shows **16 characters once**, in four groups of four: `abcd efgh ijkl mnop`
+5. Type them into the app **without the spaces** → `abcdefghijklmnop`
+
+Then press **Send a test email**. If it fails, it is almost always one of those two things: the
+account password instead of an app password, or the spaces left in.
+
+> Other providers are the same idea under a different name — Outlook and Yahoo both call it an
+> app password, and it lives in the same security section of the account.
+
+#### Where the credentials are kept
+
+In the app's own database (`tracker.db`), which is gitignored — never in `config.json`, which is
+committed. They are **not** encrypted, so treat the machine account as the boundary; an app
+password is revocable and can only send mail, which is exactly why it is the right thing to
+paste here rather than your real one.
+
+A `.env` in the project root works as a fallback if you prefer keeping them out of the database:
+
+```ini
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=abcdefghijklmnop
+SMTP_HOST=          # only for a provider that is not in the list above
+SMTP_PORT=          # only if your network blocks 587
+```
+
+The Notifications tab detects this and says *already configured outside the app* instead of
+asking again. One caveat for a **packaged build**: there, `.env` has to sit next to the
+executable *and* be the working directory, so the Settings dialog is the more reliable route
+for anyone running a distributed copy.
 
 ### 3. Install the desktop launcher — optional, recommended
 
